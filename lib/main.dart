@@ -24,7 +24,6 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    // Configurazione multi-piattaforma
     if (kIsWeb) {
       await _initializeWeb();
     } else {
@@ -41,32 +40,39 @@ void main() async {
         child: const TravelSageApp(),
       ),
     );
-  } catch (e, stack) {
-    debugPrint('🔥 ERROR: $e\n$stack');
-    _runErrorApp(e);
+  } catch (e) {
+    _runErrorApp(e.toString());
   }
 }
 
 Future<void> _initializeWeb() async {
-  // Niente caricamento .env per web, usa env.js
+  // Configurazione specifica per web
 }
 
-void _runErrorApp(Object error) {
+void _verifyFirebaseConfig() {
+  if (kIsWeb) {
+    final app = Firebase.app();
+    debugPrint('Configurazione web attiva');
+    debugPrint('ProjectID: ${app.options.projectId}');
+    debugPrint('API Key in uso: ${app.options.apiKey}');
+    
+    // Verifica che l'apiKey inizi con "AIzaSy" (formato web)
+    assert(app.options.apiKey.startsWith('AIzaSy'), 
+        '⚠️ Attenzione: stai usando una chiave non web!');
+  }
+}
+
+void _runErrorApp(String error) {
   runApp(MaterialApp(
     home: Scaffold(
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error, size: 50, color: Colors.red),
-            const SizedBox(height: 20),
-            const Text('Errore Critico', style: TextStyle(fontSize: 24)),
-            const SizedBox(height: 10),
-            Text(error.toString(), textAlign: TextAlign.center),
-            const SizedBox(height: 20),
+            Text('Errore: $error', style: const TextStyle(color: Colors.red)),
             ElevatedButton(
               onPressed: () => main(),
-              child: const Text('RIAVVIA'),
+              child: const Text('Riprova'),
             ),
           ],
         ),

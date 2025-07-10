@@ -15,24 +15,34 @@
     the `--base-href` argument provided to `flutter build`.
   -->
     <!-- Aggiungi prima del main.dart.js -->
-  <script>
-    window.addEventListener('load', function() {
-      console.log('Page fully loaded');
-      setTimeout(function() {
-        if (!window._flutterAppReady) {
-          document.body.innerHTML = '<div style="padding:20px;color:red">' +
-            '<h1>Errore di caricamento</h1>' +
-            '<p>L\'applicazione non si è avviata correttamente.</p>' +
-            '<button onclick="window.location.reload()">Ricarica</button>' +
-            '</div>';
-        }
-      }, 5000); // Timeout di 5 secondi
-    });
-  </script>
-  <script src="main.dart.js" type="application/javascript"></script>
+<head>
   <script src="env.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        if (!window.flutterAppReady) {
+          document.body.innerHTML = '<div style="padding:20px;text-align:center">'+
+            '<h2>Errore di caricamento</h2><button onclick="window.location.reload()">Ricarica</button></div>';
+        }
+      }, 5000);
+    });
+  </script>
+</head>
+
+<head>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E", // Chiave WEB
+      authDomain: "travelsage-2fbbc.firebaseapp.com",
+      projectId: "travelsage-2fbbc",
+      storageBucket: "travelsage-2fbbc.firebasestorage.app",
+      messagingSenderId: "1051759939227",
+      appId: "1:1051759939227:web:b34f7d629a4d79935d003e" // Nota 'web' nell'ID
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+</head>
 
   <base href="$FLUTTER_BASE_HREF">
 

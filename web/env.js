@@ -1,6 +1,6 @@
 window.flutterConfig = {
-  FIREBASE_API_KEY: "AIza...",
-  FIREBASE_APP_ID: "1:123...",
-  FIREBASE_PROJECT_ID: "travelsage-...",
-  FIREBASE_STORAGE_BUCKET: "travelsage-....appspot.com"
+  FIREBASE_API_KEY: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
+  FIREBASE_APP_ID: "1:1051759939227:web:b34f7d629a4d79935d003e",
+  FIREBASE_PROJECT_ID: "travelsage-2fbbc",
+  FIREBASE_STORAGE_BUCKET: "travelsage-2fbbc.firebasestorage.app"
 };
