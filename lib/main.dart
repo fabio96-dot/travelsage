@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; 
 import 'package:provider/provider.dart';
-import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart';
 import 'pages/theme_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,16 +13,28 @@ import 'pages/viaggio_dettaglio_page.dart';
 import 'pages/modifica_viaggio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
+import 'models/travel_state.dart';
+import 'core/config/env.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Env.load(); // Carica le configurazioni
+  
   await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
+    options: FirebaseOptions(
+    apiKey: Env.firebaseApiKey,
+    appId: Env.firebaseAppId,
+    projectId: Env.firebaseProjectId, // Parametro obbligatorio
+    messagingSenderId: Env.firebaseMessagingSenderId, // Parametro obbligatorio
+    storageBucket: Env.firebaseStorageBucket, // Parametro obbligatorio
+    // Parametri aggiuntivi per web:
+    authDomain: kIsWeb ? "${Env.firebaseProjectId}.firebaseapp.com" : null,
+    measurementId: kIsWeb ? "G-ABCDEF1234" : null,
+    ),
   );
-  await initializeDateFormatting('it_IT', null);
 
   runApp(
     ChangeNotifierProvider(
@@ -394,13 +407,13 @@ class _TripsPageState extends State<TripsPage> {
 
         if (confermato && nonArchiviato && scaduto) {
         viaggiBozza[i] = viaggio.copyWith(archiviato: true);
-        viaggiDaArchiviare.add(viaggio.destinazione);
+        TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione});
       }
     }
   });
 
-  if (viaggiDaArchiviare.isNotEmpty) {
-    final snackText = '${viaggiDaArchiviare.length} viaggi archiviati automaticamente';
+  if (TravelState.viaggiDaArchiviare.isNotEmpty) {
+    final snackText = '${TravelState.viaggiDaArchiviare.length} viaggi archiviati automaticamente';
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -415,7 +428,7 @@ class _TripsPageState extends State<TripsPage> {
               context: context,
               builder: (_) => AlertDialog(
                 title: const Text('Viaggi Archiviati'),
-                content: Text(viaggiDaArchiviare.join('\n')),
+                content: Text(TravelState.viaggiDaArchiviare.join('\n')),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
@@ -478,6 +491,7 @@ class _TripsPageState extends State<TripsPage> {
                   final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
 
                   return InkWell(
+                    key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'), // Chiave univoca
                     onTap: () {
                       if (viaggio.confermato) {
                         Navigator.push(
@@ -639,7 +653,7 @@ class _TripsPageState extends State<TripsPage> {
                 },
               ),
             ),
-      floatingActionButton: FloatingActionButton(
+        floatingActionButton: FloatingActionButton(
         onPressed: widget.onAddNewTrip,
         backgroundColor: Colors.indigo,
         child: const Icon(Icons.add),
