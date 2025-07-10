@@ -1,0 +1,42 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "travelsage-2fbbc",
+          "appId": "1:1051759939227:android:d7927544336b17aa5d003e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "travelsage-2fbbc",
+          "configurations": {
+            "android": "1:1051759939227:android:d7927544336b17aa5d003e",
+            "ios": "1:1051759939227:ios:0b75a102a323b0b55d003e",
+            "macos": "1:1051759939227:ios:0b75a102a323b0b55d003e",
+            "web": "1:1051759939227:web:a17725fc335186e75d003e",
+            "windows": "1:1051759939227:web:b34f7d629a4d79935d003e"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint",
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}
