@@ -22,36 +22,57 @@ import '../widgets/skeleton_loader.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Debug: stampa lo stato di inizializzazione
-  debugPrint('⏳ Starting app initialization...');
   
   try {
-    await dotenv.load(fileName: '.env');
-    debugPrint('✅ .env loaded successfully');
-    
+    // Configurazione multi-piattaforma
+    if (kIsWeb) {
+      await _initializeWeb();
+    } else {
+      await dotenv.load(fileName: '.env');
+    }
+
     await Firebase.initializeApp(
-      options: FirebaseOptions(
-        apiKey: dotenv.env['FIREBASE_API_KEY']!,
-        appId: dotenv.env['FIREBASE_APP_ID']!,
-        messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
-        projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
-        storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    runApp(
+      ChangeNotifierProvider(
+        create: (_) => ThemeProvider(),
+        child: const TravelSageApp(),
       ),
     );
-    debugPrint('✅ Firebase initialized');
   } catch (e, stack) {
-    debugPrint('🔥 ERROR: $e');
-    debugPrint('🔍 Stack trace: $stack');
+    debugPrint('🔥 ERROR: $e\n$stack');
+    _runErrorApp(e);
   }
+}
 
-  runApp(
-      AppInitializer(
-      child: ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: const TravelSageApp(),
+Future<void> _initializeWeb() async {
+  // Niente caricamento .env per web, usa env.js
+}
+
+void _runErrorApp(Object error) {
+  runApp(MaterialApp(
+    home: Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, size: 50, color: Colors.red),
+            const SizedBox(height: 20),
+            const Text('Errore Critico', style: TextStyle(fontSize: 24)),
+            const SizedBox(height: 10),
+            Text(error.toString(), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => main(),
+              child: const Text('RIAVVIA'),
+            ),
+          ],
+        ),
+      ),
     ),
-    ),
-  );
+  ));
 }
 
 List<Viaggio> viaggiBozza = [];
@@ -501,7 +522,7 @@ class _TripsPageState extends State<TripsPage> {
                   final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
 
                   return InkWell(
-                    key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'), // Chiave univoca
+                    key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
                     onTap: () {
                       if (viaggio.confermato) {
                         Navigator.push(

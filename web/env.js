@@ -1,7 +1,6 @@
 window.flutterConfig = {
-  FIREBASE_API_KEY: "tuachiave",
-  FIREBASE_APP_ID: "tuaappid",
-  FIREBASE_PROJECT_ID: "tuoprogetto",
-  FIREBASE_MESSAGING_SENDER_ID: "123456789",
-  FIREBASE_STORAGE_BUCKET: "tuobucket.appspot.com"
+  FIREBASE_API_KEY: "AIza...",
+  FIREBASE_APP_ID: "1:123...",
+  FIREBASE_PROJECT_ID: "travelsage-...",
+  FIREBASE_STORAGE_BUCKET: "travelsage-....appspot.com"
 };
