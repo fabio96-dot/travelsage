@@ -111,24 +111,36 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
                 
                 // Selezione Pagatore
                 InputDecorator(
-                  decoration: InputDecoration(
+                    decoration: InputDecoration(
                     labelText: 'Chi ha pagato',
                     border: const OutlineInputBorder(),
                     errorText: _pagatoreNonSelezionato ? 'Seleziona un pagatore' : null,
-                  ),
-                  child: DropdownButtonHideUnderline(
+                    suffixIcon: pagatore.isNotEmpty 
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : null,
+                    ),
+                    child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      hint: const Text('Seleziona'),
-                      items: widget.viaggio.partecipanti
-                          .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                          .toList(),
-                      onChanged: (val) {
+                      hint: const Text('Seleziona', style: TextStyle(color: Colors.grey)),
+                      value: pagatore.isEmpty ? null : pagatore, // Aggiungi questa linea
+                      items: widget.viaggio.partecipanti.map((p) {
+                      return DropdownMenuItem(value: p,child: Text(p,style: TextStyle(
+                      color: pagatore == p ? Colors.indigo : Colors.black, // Evidenzia selezione
+                      fontWeight: pagatore == p ? FontWeight.bold : FontWeight.normal,
+                      ),
+                     ),
+                    );
+                  }).toList(),
+                        onChanged: (val) {
                         pagatore = val ?? '';
                         setModalState(() {
-                          _pagatoreNonSelezionato = val == null;
-                        });
-                      },
+                        _pagatoreNonSelezionato = val == null;
+                      });
+                    },
+                    dropdownColor: Colors.white,
+                    icon: const Icon(Icons.arrow_drop_down),
+                    style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
                 ),

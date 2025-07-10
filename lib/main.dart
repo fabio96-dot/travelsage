@@ -387,33 +387,48 @@ class _TripsPageState extends State<TripsPage> {
         final viaggio = viaggiBozza[i];
         final dataFine = viaggio.dataFine;
 
-        if (viaggio.confermato && !viaggio.archiviato && dataFine.isBefore(oggi)) {
-          viaggiBozza[i] = viaggio.copyWith(archiviato: true);
-          viaggiArchiviati.add(viaggio.destinazione);
-        }
+        // Archivia solo viaggi confermati e non già archiviati
+        final nonArchiviato = !viaggio.archiviato;
+        final confermato = viaggio.confermato;
+        final scaduto = dataFine.isBefore(oggi);
+
+        if (confermato && nonArchiviato && scaduto) {
+        viaggiBozza[i] = viaggio.copyWith(archiviato: true);
+        viaggiDaArchiviare.add(viaggio.destinazione);
       }
-    });
-
-    if (viaggiArchiviati.isNotEmpty) {
-      final snackText = viaggiArchiviati.length == 1
-          ? 'Viaggio a ${viaggiArchiviati.first} archiviato automaticamente.'
-          : '${viaggiArchiviati.length} viaggi sono stati archiviati automaticamente.';
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            snackText,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-          ),
-          backgroundColor: Colors.indigo,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        ),
-      );
     }
+  });
+
+  if (viaggiDaArchiviare.isNotEmpty) {
+    final snackText = '${viaggiDaArchiviare.length} viaggi archiviati automaticamente';
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(snackText),
+        backgroundColor: Colors.indigo,
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: 'DETTAGLI',
+          textColor: Colors.white,
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text('Viaggi Archiviati'),
+                content: Text(viaggiDaArchiviare.join('\n')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK')),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
