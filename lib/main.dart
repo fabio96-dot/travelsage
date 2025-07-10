@@ -15,31 +15,41 @@ import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
 import 'models/travel_state.dart';
 import 'core/config/env.dart';
+import 'widgets/app_initializer.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Env.load(); // Carica le configurazioni
+  // Debug: stampa lo stato di inizializzazione
+  debugPrint('⏳ Starting app initialization...');
   
-  await Firebase.initializeApp(
-    options: FirebaseOptions(
-    apiKey: Env.firebaseApiKey,
-    appId: Env.firebaseAppId,
-    projectId: Env.firebaseProjectId, // Parametro obbligatorio
-    messagingSenderId: Env.firebaseMessagingSenderId, // Parametro obbligatorio
-    storageBucket: Env.firebaseStorageBucket, // Parametro obbligatorio
-    // Parametri aggiuntivi per web:
-    authDomain: kIsWeb ? "${Env.firebaseProjectId}.firebaseapp.com" : null,
-    measurementId: kIsWeb ? "G-ABCDEF1234" : null,
-    ),
-  );
+  try {
+    await dotenv.load(fileName: '.env');
+    debugPrint('✅ .env loaded successfully');
+    
+    await Firebase.initializeApp(
+      options: FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY']!,
+        appId: dotenv.env['FIREBASE_APP_ID']!,
+        messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+        projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+        storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+      ),
+    );
+    debugPrint('✅ Firebase initialized');
+  } catch (e, stack) {
+    debugPrint('🔥 ERROR: $e');
+    debugPrint('🔍 Stack trace: $stack');
+  }
 
   runApp(
-    ChangeNotifierProvider(
+      AppInitializer(
+      child: ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
       child: const TravelSageApp(),
+    ),
     ),
   );
 }

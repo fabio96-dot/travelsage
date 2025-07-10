@@ -14,8 +14,21 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-   <!-- Aggiungi PRIMA del main.dart.js -->
-  <script src="env.js"></script>
+    <!-- Aggiungi prima del main.dart.js -->
+  <script>
+    window.addEventListener('load', function() {
+      console.log('Page fully loaded');
+      setTimeout(function() {
+        if (!window._flutterAppReady) {
+          document.body.innerHTML = '<div style="padding:20px;color:red">' +
+            '<h1>Errore di caricamento</h1>' +
+            '<p>L\'applicazione non si è avviata correttamente.</p>' +
+            '<button onclick="window.location.reload()">Ricarica</button>' +
+            '</div>';
+        }
+      }, 5000); // Timeout di 5 secondi
+    });
+  </script>
   <script src="main.dart.js" type="application/javascript"></script>
 
   <base href="$FLUTTER_BASE_HREF">
