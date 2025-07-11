@@ -55,6 +55,7 @@ class _ModificaViaggioPageState extends State<ModificaViaggioPage> {
     if (_formKey.currentState!.validate() && partecipanti.isNotEmpty) {
       final viaggioModificato = widget.viaggio.copyWith(
         destinazione: destinazioneController.text.trim(),
+        titolo: destinazioneController.text.trim(), // ✅ USA IL CONTROLLER QUI
         dataInizio: startDate,
         dataFine: endDate,
         budget: budgetController.text.trim(),

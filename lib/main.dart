@@ -340,7 +340,7 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
 
     final nuovoViaggio = Viaggio(
       id: UniqueKey().toString(), // Genera un ID univoco
-      titolo: 'Nuovo Viaggio', // Aggiungi un titolo di default
+      titolo: destination.trim(),
       destinazione: destination.trim(),
       dataInizio: startDate!,
       dataFine: endDate!,
