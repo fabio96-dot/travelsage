@@ -18,26 +18,38 @@ import 'core/config/env.dart';
 import 'widgets/app_initializer.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
+import 'dart:js' as js;
 
 
-void main() async {
+
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Mostra immediatamente lo splash screen
-  runApp(
-    MaterialApp(
-      home: SplashScreen(),
-      debugShowCheckedModeBanner: false,
-    ),
-  );
 
+  // Mostra immediatamente lo splash
+  runApp(const MaterialApp(
+    home: SplashScreen(),
+    debugShowCheckedModeBanner: false,
+  ));
+
+  // Inizializza l'app in background
+  _initializeAppAsync();
+}
+
+Future<void> _initializeAppAsync() async {
   try {
-    // Inizializzazione asincrona
-    await _initializeApp();
-    
-    // Carica l'app principale dopo 2 secondi minimo (per evitare splash troppo breve)
-    await Future.delayed(const Duration(seconds: 2));
-    
+    if (kIsWeb) {
+      await _waitForEnvJs();
+    } else {
+      await dotenv.load(fileName: '.env');
+    }
+
+    await Firebase.initializeApp(
+      options: kIsWeb ? _getWebFirebaseOptions() : DefaultFirebaseOptions.currentPlatform,
+    );
+
+    // Attendi 1 secondo per rendere il passaggio visivamente fluido
+    await Future.delayed(const Duration(seconds: 1));
+
     runApp(
       ChangeNotifierProvider(
         create: (_) => ThemeProvider(),
@@ -49,73 +61,6 @@ void main() async {
   }
 }
 
-Future<void> _initializeApp() async {
-  if (kIsWeb) {
-    await _initializeWeb();
-  } else {
-    await dotenv.load(fileName: '.env');
-  }
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  
-  _verifyFirebaseConfig();
-}
-
-// Aggiungi questo widget nello stesso file o in un file separato (es. splash_screen.dart)
-class SplashScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white, // Scegli il colore che preferisci
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Sostituisci con il tuo logo
-            Image.asset(
-              'assets/logo_travelsage.png', 
-              width: 200,
-              height: 200,
-            ),
-            const SizedBox(height: 20),
-            // Indicatore di caricamento personalizzabile
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-              strokeWidth: 4,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Caricamento...',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-Future<void> _initializeWeb() async {
-  // Configurazione specifica per web
-}
-
-void _verifyFirebaseConfig() {
-  if (kIsWeb) {
-    final app = Firebase.app();
-    debugPrint('Configurazione web attiva');
-    debugPrint('ProjectID: ${app.options.projectId}');
-    debugPrint('API Key in uso: ${app.options.apiKey}');
-    
-    // Verifica che l'apiKey inizi con "AIzaSy" (formato web)
-    assert(app.options.apiKey.startsWith('AIzaSy'), 
-        '⚠️ Attenzione: stai usando una chiave non web!');
-  }
-}
-
 void _runErrorApp(String error) {
   runApp(MaterialApp(
     home: Scaffold(
@@ -124,6 +69,7 @@ void _runErrorApp(String error) {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text('Errore: $error', style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () => main(),
               child: const Text('Riprova'),
@@ -133,6 +79,60 @@ void _runErrorApp(String error) {
       ),
     ),
   ));
+}
+
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image(
+              image: AssetImage('assets/logo_travelsage.png'),
+              width: 200,
+              height: 200,
+            ),
+            SizedBox(height: 20),
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+              strokeWidth: 4,
+            ),
+            SizedBox(height: 20),
+            Text(
+              'Caricamento...',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _waitForEnvJs() async {
+  while (js.context['flutterConfig'] == null) {
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
+}
+
+FirebaseOptions _getWebFirebaseOptions() {
+  final config = js.context['flutterConfig'];
+  if (config == null) throw Exception('env.js non caricato!');
+
+  return FirebaseOptions(
+    apiKey: config['apiKey'],
+    authDomain: config['authDomain'],
+    projectId: config['projectId'],
+    storageBucket: config['storageBucket'],
+    messagingSenderId: config['messagingSenderId'],
+    appId: config['appId'],
+    measurementId: config['measurementId'],
+  );
 }
 
 List<Viaggio> viaggiBozza = [];

@@ -15,18 +15,35 @@
     the `--base-href` argument provided to `flutter build`.
   -->
     <!-- Aggiungi prima del main.dart.js -->
-<script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-<script src="env.js"></script>
-<script>
-  window.addEventListener('load', function() {
-    if (!window.firebaseAppInitialized) {
-      document.body.innerHTML = '<div style="padding:20px;text-align:center">'+
-        '<h2>Errore di caricamento Firebase</h2>'+
-        '<button onclick="window.location.reload()">Ricarica</button></div>';
-    }
-  });
-</script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+  <script src="env.js"></script>
 
+  <body>
+  <div id="loading">
+    <img src="assets/logo_travelsage.png" width="150" />
+    <p>Caricamento...</p>
+  </div>
+
+  <script>
+    // Rimuovi il loader dopo che Flutter parte
+    window.addEventListener('flutter-first-frame', function () {
+      document.getElementById('loading')?.remove();
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+  </body>
+
+  <style>
+  #loading {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    font-family: sans-serif;
+    color: #555;
+  }
+  </style>
 
   <base href="$FLUTTER_BASE_HREF">
 
