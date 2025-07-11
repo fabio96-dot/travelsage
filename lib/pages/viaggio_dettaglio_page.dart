@@ -200,6 +200,7 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
                     
                     if (valid) {
                       final nuovaSpesa = Spesa(
+                        id: UniqueKey().toString(), // Aggiungi ID univoco
                         descrizione: descrizione,
                         importo: double.parse(importo),
                         pagatore: pagatore,
@@ -315,6 +316,7 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
                           pagatore.isNotEmpty &&
                           selezionati.isNotEmpty) {
                         final spesaModificata = Spesa(
+                          id: UniqueKey().toString(), // Aggiungi ID univoco
                           descrizione: descrizione,
                           importo: double.tryParse(importo) ?? 0.0,
                           pagatore: pagatore,
