@@ -18,13 +18,15 @@ import 'core/config/env.dart';
 import 'widgets/app_initializer.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:js' as js;
-
+import 'app_wrapper.dart';
 
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   // Mostra immediatamente lo splash
   runApp(const MaterialApp(
     home: SplashScreen(),
@@ -37,26 +39,42 @@ void main() {
 
 Future<void> _initializeAppAsync() async {
   try {
+    // Carica le configurazioni
     if (kIsWeb) {
       await _waitForEnvJs();
     } else {
       await dotenv.load(fileName: '.env');
     }
 
+    // Inizializza Firebase
     await Firebase.initializeApp(
       options: kIsWeb ? _getWebFirebaseOptions() : DefaultFirebaseOptions.currentPlatform,
     );
 
-    // Attendi 1 secondo per rendere il passaggio visivamente fluido
+    // Configura Crashlytics solo per mobile
+    if (!kIsWeb) {
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+    }
+
+    // Inizializza Google Fonts
+    await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
+
+    // Attendi 1 secondo per lo splash screen
     await Future.delayed(const Duration(seconds: 1));
 
-    runApp(
-      ChangeNotifierProvider(
-        create: (_) => ThemeProvider(),
-        child: const TravelSageApp(),
-      ),
-    );
-  } catch (e) {
+    // Registra l'apertura dell'app (funziona sia su web che mobile)
+    await FirebaseAnalytics.instance.logAppOpen();
+
+    // Avvia l'app principale
+    runApp(const AppWrapper());
+  } catch (e, stack) {
+    // Registra l'errore su Crashlytics (solo mobile)
+    if (!kIsWeb) {
+      await FirebaseCrashlytics.instance.recordError(e, stack);
+    }
+    
+    // Mostra la schermata di errore
     _runErrorApp(e.toString());
   }
 }
@@ -65,16 +83,35 @@ void _runErrorApp(String error) {
   runApp(MaterialApp(
     home: Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Errore: $error', style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => main(),
-              child: const Text('Riprova'),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 50),
+                const SizedBox(height: 20),
+                Text('Errore durante l\'inizializzazione:', 
+                     style: GoogleFonts.roboto(fontSize: 18)),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    error,
+                    style: GoogleFonts.roboto(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  ),
+                  onPressed: () => main(), // Riavvia l'app
+                  child: Text('Riprova', style: GoogleFonts.roboto(fontSize: 16)),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     ),
@@ -86,26 +123,30 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.white,
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image(
-              image: AssetImage('assets/logo_travelsage.png'),
+            Image.asset(
+              'assets/logo_travelsage.png',
               width: 200,
               height: 200,
             ),
-            SizedBox(height: 20),
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-              strokeWidth: 4,
+            const SizedBox(height: 30),
+            LinearProgressIndicator(
+              backgroundColor: Colors.grey[200],
+              valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).primaryColor,
+              ),
             ),
-            SizedBox(height: 20),
             Text(
               'Caricamento...',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              style: GoogleFonts.roboto(
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.onBackground,
+              ),
             ),
           ],
         ),
@@ -115,8 +156,16 @@ class SplashScreen extends StatelessWidget {
 }
 
 Future<void> _waitForEnvJs() async {
-  while (js.context['flutterConfig'] == null) {
+  const maxAttempts = 50; // 5 secondi totali (50 * 100ms)
+  int attempts = 0;
+  
+  while (js.context['flutterConfig'] == null && attempts < maxAttempts) {
     await Future.delayed(const Duration(milliseconds: 100));
+    attempts++;
+  }
+  
+  if (js.context['flutterConfig'] == null) {
+    throw Exception('Configurazione web non caricata entro il timeout');
   }
 }
 
@@ -134,6 +183,7 @@ FirebaseOptions _getWebFirebaseOptions() {
     measurementId: config['measurementId'],
   );
 }
+
 
 List<Viaggio> viaggiBozza = [];
 

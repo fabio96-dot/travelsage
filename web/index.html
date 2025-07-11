@@ -1,20 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+  <script>
+  // Misura il tempo di caricamento
+  var appStartTime = Date.now();
+  window.addEventListener('flutter-first-frame', function() {
+    var loadTime = Date.now() - appStartTime;
+    console.log('App loaded in ' + loadTime + 'ms');
+  });
+  </script>
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-    <!-- Aggiungi prima del main.dart.js -->
+  <!-- Aggiungi prima del main.dart.js -->
   <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
   <script src="env.js"></script>
 
