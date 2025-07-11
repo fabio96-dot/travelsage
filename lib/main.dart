@@ -531,57 +531,12 @@ class TripsPage extends StatefulWidget {
   State<TripsPage> createState() => _TripsPageState();
 }
 
-class _TripsPageState extends State<TripsPage> with SingleTickerProviderStateMixin {
-  late TabController _tabController; // Aggiungi il controller
-  int _currentTabIndex = 0;
-
+class _TripsPageState extends State<TripsPage> {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 2, // Numero di tab
-      vsync: this, // Richiede SingleTickerProviderStateMixin
-    );
-    _tabController.addListener(_handleTabSelection);
     Future.delayed(Duration.zero, _archiviaViaggiScaduti);
   }
-
-  void _handleTabSelection() {
-    setState(() {
-      _currentTabIndex = _tabController.index;
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose(); // Importante per evitare memory leak
-    super.dispose();
-  }
-
-void _showDeleteDialog(BuildContext context, int index) {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Elimina viaggio'),
-      content: const Text('Sei sicuro di voler eliminare questo viaggio?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annulla'),
-        ),
-        TextButton(
-          onPressed: () {
-            setState(() {
-              viaggiBozza.removeAt(index);
-            });
-            Navigator.pop(context);
-          },
-          child: const Text('Elimina', style: TextStyle(color: Colors.red)),
-        ),
-      ],
-    ),
-  );
-}
 
   void _archiviaViaggiScaduti() {
     final oggi = DateTime.now();
@@ -598,92 +553,94 @@ void _showDeleteDialog(BuildContext context, int index) {
         final scaduto = dataFine.isBefore(oggi);
 
         if (confermato && nonArchiviato && scaduto) {
-        viaggiBozza[i] = viaggio.copyWith(archiviato: true);
-        TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione});
+          viaggiBozza[i] = viaggio.copyWith(archiviato: true);
+          TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione});
+        }
       }
-    }
-  });
+    });
 
-  if (TravelState.viaggiDaArchiviare.isNotEmpty) {
-    final snackText = '${TravelState.viaggiDaArchiviare.length} viaggi archiviati automaticamente';
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(snackText),
-        backgroundColor: Colors.indigo,
-        duration: const Duration(seconds: 3),
-        action: SnackBarAction(
-          label: 'DETTAGLI',
-          textColor: Colors.white,
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text('Viaggi Archiviati'),
-                content: Text(TravelState.viaggiDaArchiviare.join('\n')),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('OK')),
-                ],
-              ),
-            );
-          },
+    if (TravelState.viaggiDaArchiviare.isNotEmpty) {
+      final snackText = '${TravelState.viaggiDaArchiviare.length} viaggi archiviati automaticamente';
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(snackText),
+          backgroundColor: Colors.indigo,
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'DETTAGLI',
+            textColor: Colors.white,
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Viaggi Archiviati'),
+                  content: Text(TravelState.viaggiDaArchiviare.join('\n')),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK')),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
+      );
+    }
+  }
+
+  void _showDeleteDialog(BuildContext context, int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Elimina viaggio'),
+        content: const Text('Sei sicuro di voler eliminare questo viaggio?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                viaggiBozza.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }
-}
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final formatter = DateFormat('dd/MM/yyyy');
-
     final viaggiNonArchiviati = viaggiBozza.where((v) => !v.archiviato).toList();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Viaggi salvati'),
-        bottom: TabBar( 
-          controller: _tabController, // Assegna il controller
-          tabs: const [
-            Tab(icon: Icon(Icons.card_travel)),  // Parentesi chiusa aggiunta
-            Tab(icon: Icon(Icons.calendar_today)), // Parentesi chiusa aggiunta
-          ],
-          onTap: (index) {
-            setState(() {
-              _currentTabIndex = index;
-            });
-          },
-        ),
       ),
-      body: _buildTabContent(context, viaggiNonArchiviati),
-      floatingActionButton: _currentTabIndex == 0
-          ? FloatingActionButton(
-              onPressed: widget.onAddNewTrip,
-              backgroundColor: Colors.indigo,
-              child: const Icon(Icons.add),
-              tooltip: 'Aggiungi nuovo viaggio',
-            )
-          : null,
+      body: viaggiNonArchiviati.isEmpty
+          ? const SkeletonLoader()
+          : _buildViaggiGrid(context, viaggiNonArchiviati),
+      floatingActionButton: FloatingActionButton(
+        onPressed: widget.onAddNewTrip,
+        backgroundColor: Colors.indigo,
+        child: const Icon(Icons.add),
+        tooltip: 'Aggiungi nuovo viaggio',
+      ),
     );
   }
 
-  Widget _buildTabContent(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
-    if (_currentTabIndex == 0) {
-      return _buildViaggiTab(context, viaggiNonArchiviati);
-    } else {
-      return _buildItinerariTab(context);
-    }
-  }
-
-  Widget _buildViaggiTab(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
+  Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    
     int cardsPerRow;
     double cardHeight;
 
@@ -701,281 +658,145 @@ void _showDeleteDialog(BuildContext context, int index) {
       cardHeight = 160;
     }
 
-    return viaggiNonArchiviati.isEmpty
-        ? const SkeletonLoader()
-        : Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: GridView.builder(
-              itemCount: viaggiNonArchiviati.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cardsPerRow,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
-              ),
-              itemBuilder: (context, index) {
-                final viaggio = viaggiNonArchiviati[index];
-                final originalIndex = viaggiBozza.indexOf(viaggio);
-                final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: GridView.builder(
+        itemCount: viaggiNonArchiviati.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardsPerRow,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
+        ),
+        itemBuilder: (context, index) {
+          final viaggio = viaggiNonArchiviati[index];
+          final originalIndex = viaggiBozza.indexOf(viaggio);
+          final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
+          final titoloDaMostrare = viaggio.titolo.isNotEmpty ? viaggio.titolo : 'Viaggio a ${viaggio.destinazione}';
 
-                return InkWell(
-                  key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
-  onTap: () {
-    if (viaggio.confermato) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ViaggioDettaglioPage(
-            viaggio: viaggio,
-            index: originalIndex,
-          ),
-        ),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ModificaViaggioPage(
-            viaggio: viaggio,
-            index: originalIndex,
-          ),
-        ),
-      ).then((_) => setState(() {}));
-    }
-  },
-  child: Container(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(20),
-      color: Theme.of(context).cardColor,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.grey.withOpacity(0.3),
-          blurRadius: 5,
-          spreadRadius: 1,
-        ),
-      ],
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Intestazione con titolo e pulsanti
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  viaggio.titolo.isNotEmpty ? viaggio.titolo : viaggio.destinazione,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+          return InkWell(
+            key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
+            onTap: () {
+              if (viaggio.confermato) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ViaggioDettaglioPage(
+                      viaggio: viaggio,
+                      index: originalIndex,
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                );
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ModificaViaggioPage(
+                      viaggio: viaggio,
+                      index: originalIndex,
+                    ),
+                  ),
+                ).then((_) => setState(() {}));
+              }
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                image: DecorationImage(
+                  image: NetworkImage(imageUrl),
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(
+                    Colors.black.withOpacity(0.5),
+                    BlendMode.darken,
+                  ),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.3),
+                    blurRadius: 5,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
-              if (!viaggio.confermato)
-                IconButton(
-                  icon: const Icon(Icons.check, color: Colors.green),
-                  onPressed: () {
-                    setState(() {
-                      viaggiBozza[originalIndex] = viaggio.copyWith(confermato: true);
-                    });
-                  },
-                ),
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _showDeleteDialog(context, originalIndex),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 8),
-          
-          // Dettagli viaggio
-          Row(
-            children: [
-              const Icon(Icons.location_on, size: 16, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                viaggio.destinazione,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 8),
-          
-          // Date
-          Row(
-            children: [
-              const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                '${DateFormat('dd/MM/yy').format(viaggio.dataInizio)} - ${DateFormat('dd/MM/yy').format(viaggio.dataFine)}',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 8),
-          
-          // Stato
-          Row(
-            children: [
-              Icon(
-                viaggio.confermato ? Icons.check_circle : Icons.edit,
-                size: 16,
-                color: viaggio.confermato ? Colors.green : Colors.orange,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                viaggio.confermato ? 'Confermato' : 'Bozza',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: viaggio.confermato ? Colors.green : Colors.orange,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  ),
-);
-              },
-            ),
-          );
-  }
-
-  Widget _buildItinerariTab(BuildContext context) {
-    final viaggiConItinerario = viaggiBozza
-        .where((v) => v.confermato && !v.archiviato && v.itinerario.isNotEmpty)
-        .toList();
-
-    if (viaggiConItinerario.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.calendar_today, size: 60, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Nessun itinerario disponibile',
-              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Conferma un viaggio e aggiungi attività per visualizzare gli itinerari',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[500]),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: viaggiConItinerario.length,
-      itemBuilder: (context, index) {
-        final viaggio = viaggiConItinerario[index];
-        final giorniViaggio = _getDaysInRange(viaggio.dataInizio, viaggio.dataFine);
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: ExpansionTile(
-            leading: const Icon(Icons.calendar_today),
-            title: Text(viaggio.titolo),
-            subtitle: Text('${viaggio.destinazione} • ${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} - ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}'),
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  children: giorniViaggio.map((giorno) {
-                    final attivita = viaggio.attivitaDelGiorno(giorno) ?? [];
-                    return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        Icon(
+                          viaggio.confermato ? Icons.check_circle : Icons.edit_note,
+                          color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
                           child: Text(
-                            DateFormat('EEEE, d MMMM', 'it_IT').format(giorno),
-                            style: const TextStyle(
+                              titoloDaMostrare, // Usa la variabile qui
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 16,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (attivita.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: Text('Nessuna attività programmata'),
-                          )
-                        else
-                          ...attivita.map((a) => _buildAttivitaCard(a)),
+                        if (!viaggio.confermato)
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                viaggiBozza[originalIndex] = viaggio.copyWith(confermato: true);
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.indigoAccent,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text('Conferma'),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          onPressed: () => _showDeleteDialog(context, originalIndex),
+                        ),
                       ],
-                    );
-                  }).toList(),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          viaggio.confermato ? Icons.lock_open_rounded : Icons.edit,
+                          size: 16,
+                          color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          viaggio.confermato ? 'Viaggio confermato' : 'Bozza in lavorazione',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ViaggioDettaglioPage(
-                          viaggio: viaggio,
-                          index: viaggiBozza.indexOf(viaggio),
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('Vedi dettagli viaggio'),
-                )
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAttivitaCard(Attivita attivita) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: attivita.completata ? Colors.green : Colors.blue,
-          child: Icon(
-            attivita.completata ? Icons.check : Icons.access_time,
-            color: Colors.white,
-          ),
-        ),
-        title: Text(attivita.titolo),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(attivita.descrizione),
-            const SizedBox(height: 4),
-            Text(
-              '${DateFormat('HH:mm').format(attivita.orario)}${attivita.luogo != null ? ' • ${attivita.luogo}' : ''}',
-              style: const TextStyle(color: Colors.grey),
             ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: () {
-            // Qui puoi aggiungere la logica per modificare l'attività
-          },
-        ),
+          );
+        },
       ),
     );
-  }
-
-  List<DateTime> _getDaysInRange(DateTime startDate, DateTime endDate) {
-    final days = <DateTime>[];
-    for (var i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      days.add(startDate.add(Duration(days: i)));
-    }
-    return days;
   }
 }
