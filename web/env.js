@@ -1,6 +1,9 @@
 window.flutterConfig = {
-  FIREBASE_API_KEY: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
-  FIREBASE_APP_ID: "1:1051759939227:web:b34f7d629a4d79935d003e",
-  FIREBASE_PROJECT_ID: "travelsage-2fbbc",
-  FIREBASE_STORAGE_BUCKET: "travelsage-2fbbc.firebasestorage.app"
+  apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
+  authDomain: "travelsage-2fbbc.firebaseapp.com",
+  projectId: "travelsage-2fbbc",
+  storageBucket: "travelsage-2fbbc.firebasestorage.app",
+  messagingSenderId: "1051759939227",
+  appId: "1:1051759939227:web:b34f7d629a4d79935d003e",
+  measurementId: "G-RJZKZXNDNW"
 };

@@ -23,17 +23,21 @@ import '../widgets/skeleton_loader.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Mostra immediatamente lo splash screen
+  runApp(
+    MaterialApp(
+      home: SplashScreen(),
+      debugShowCheckedModeBanner: false,
+    ),
+  );
+
   try {
-    if (kIsWeb) {
-      await _initializeWeb();
-    } else {
-      await dotenv.load(fileName: '.env');
-    }
-
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
+    // Inizializzazione asincrona
+    await _initializeApp();
+    
+    // Carica l'app principale dopo 2 secondi minimo (per evitare splash troppo breve)
+    await Future.delayed(const Duration(seconds: 2));
+    
     runApp(
       ChangeNotifierProvider(
         create: (_) => ThemeProvider(),
@@ -45,6 +49,56 @@ void main() async {
   }
 }
 
+Future<void> _initializeApp() async {
+  if (kIsWeb) {
+    await _initializeWeb();
+  } else {
+    await dotenv.load(fileName: '.env');
+  }
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
+  _verifyFirebaseConfig();
+}
+
+// Aggiungi questo widget nello stesso file o in un file separato (es. splash_screen.dart)
+class SplashScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white, // Scegli il colore che preferisci
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Sostituisci con il tuo logo
+            Image.asset(
+              'assets/logo_travelsage.png', 
+              width: 200,
+              height: 200,
+            ),
+            const SizedBox(height: 20),
+            // Indicatore di caricamento personalizzabile
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+              strokeWidth: 4,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Caricamento...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 Future<void> _initializeWeb() async {
   // Configurazione specifica per web
 }

@@ -15,34 +15,18 @@
     the `--base-href` argument provided to `flutter build`.
   -->
     <!-- Aggiungi prima del main.dart.js -->
-<head>
-  <script src="env.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-  <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        if (!window.flutterAppReady) {
-          document.body.innerHTML = '<div style="padding:20px;text-align:center">'+
-            '<h2>Errore di caricamento</h2><button onclick="window.location.reload()">Ricarica</button></div>';
-        }
-      }, 5000);
-    });
-  </script>
-</head>
+<script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+<script src="env.js"></script>
+<script>
+  window.addEventListener('load', function() {
+    if (!window.firebaseAppInitialized) {
+      document.body.innerHTML = '<div style="padding:20px;text-align:center">'+
+        '<h2>Errore di caricamento Firebase</h2>'+
+        '<button onclick="window.location.reload()">Ricarica</button></div>';
+    }
+  });
+</script>
 
-<head>
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E", // Chiave WEB
-      authDomain: "travelsage-2fbbc.firebaseapp.com",
-      projectId: "travelsage-2fbbc",
-      storageBucket: "travelsage-2fbbc.firebasestorage.app",
-      messagingSenderId: "1051759939227",
-      appId: "1:1051759939227:web:b34f7d629a4d79935d003e" // Nota 'web' nell'ID
-    };
-    firebase.initializeApp(firebaseConfig);
-  </script>
-</head>
 
   <base href="$FLUTTER_BASE_HREF">
 

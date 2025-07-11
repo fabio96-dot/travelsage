@@ -21,78 +21,60 @@ Future<void> main() async {
 }
 
 class DefaultFirebaseOptions {
+  // Configurazione per web
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E',
+    appId: '1:1051759939227:web:b34f7d629a4d79935d003e',
+    messagingSenderId: '1051759939227',
+    projectId: 'travelsage-2fbbc',
+    authDomain: 'travelsage-2fbbc.firebaseapp.com',
+    storageBucket: 'travelsage-2fbbc.appspot.com',
+    measurementId: 'G-BVR6GRSVNW',
+  );
+
+  // Configurazione per Android
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIza...', // Sostituisci con la tua chiave Android
+    appId: '1:1051759939227:android:...', // Sostituisci con il tuo app ID Android
+    messagingSenderId: '1051759939227',
+    projectId: 'travelsage-2fbbc',
+    storageBucket: 'travelsage-2fbbc.appspot.com',
+  );
+
+  // Configurazione per iOS
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIza...', // Sostituisci con la tua chiave iOS
+    appId: '1:1051759939227:ios:...', // Sostituisci con il tuo app ID iOS
+    messagingSenderId: '1051759939227',
+    projectId: 'travelsage-2fbbc',
+    storageBucket: 'travelsage-2fbbc.appspot.com',
+    iosBundleId: 'com.example.travelSage',
+  );
+
   static FirebaseOptions get currentPlatform {
-    // Load environment variables
-    final apiKey = dotenv.env['FIREBASE_API_KEY'];
-    final appId = dotenv.env['FIREBASE_APP_ID'];
-    final messagingSenderId = dotenv.env['FIREBASE_MESSAGING_SENDER_ID'];
-    final projectId = dotenv.env['FIREBASE_PROJECT_ID'];
-    final storageBucket = dotenv.env['FIREBASE_STORAGE_BUCKET'];
-
-    // Verify required environment variables
-    if (apiKey == null || appId == null) {
-      throw AssertionError(
-        'Required Firebase environment variables (FIREBASE_API_KEY and FIREBASE_APP_ID) are missing in .env file',
-      );
-    }
-
-    // Common configuration for all platforms
-    final baseOptions = FirebaseOptions(
-      apiKey: apiKey,
-      appId: appId,
-      messagingSenderId: messagingSenderId ?? '',
-      projectId: projectId ?? 'travelsage-2fbbc',
-      storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-    );
-
     if (kIsWeb) {
-      return FirebaseOptions(
-        apiKey: apiKey,
-        appId: appId,
-        messagingSenderId: messagingSenderId ?? '1051759939227',
-        projectId: projectId ?? 'travelsage-2fbbc',
-        authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? 'travelsage-2fbbc.firebaseapp.com',
-        storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-        measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID'] ?? 'G-BVR6GRSVNW',
-      );
+      return web;
     }
-
+    
+    // Carica le variabili d'ambiente SOLO per mobile
+    final envVars = kIsWeb ? {} : dotenv.env;
+    
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return FirebaseOptions(
-          apiKey: apiKey,
-          appId: appId,
-          messagingSenderId: messagingSenderId ?? '1051759939227',
-          projectId: projectId ?? 'travelsage-2fbbc',
-          storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-        );
+        return android;
       case TargetPlatform.iOS:
-        return FirebaseOptions(
-          apiKey: apiKey,
-          appId: appId,
-          messagingSenderId: messagingSenderId ?? '1051759939227',
-          projectId: projectId ?? 'travelsage-2fbbc',
-          storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-          iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID'] ?? 'com.example.travelSage',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        return FirebaseOptions(
-          apiKey: apiKey,
-          appId: appId,
-          messagingSenderId: messagingSenderId ?? '1051759939227',
-          projectId: projectId ?? 'travelsage-2fbbc',
-          storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-          iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID'] ?? 'com.example.travelSage',
-        );
+        return ios; // Usa la stessa config di iOS per macOS
       case TargetPlatform.windows:
         return FirebaseOptions(
-          apiKey: apiKey,
-          appId: appId,
-          messagingSenderId: messagingSenderId ?? '1051759939227',
-          projectId: projectId ?? 'travelsage-2fbbc',
-          authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? 'travelsage-2fbbc.firebaseapp.com',
-          storageBucket: storageBucket ?? 'travelsage-2fbbc.appspot.com',
-          measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID'] ?? 'G-RJZKZXNDNW',
+          apiKey: envVars['FIREBASE_API_KEY'] ?? web.apiKey,
+          appId: envVars['FIREBASE_APP_ID'] ?? web.appId,
+          messagingSenderId: envVars['FIREBASE_MESSAGING_SENDER_ID'] ?? web.messagingSenderId,
+          projectId: envVars['FIREBASE_PROJECT_ID'] ?? web.projectId,
+          authDomain: envVars['FIREBASE_AUTH_DOMAIN'] ?? web.authDomain,
+          storageBucket: envVars['FIREBASE_STORAGE_BUCKET'] ?? web.storageBucket,
+          measurementId: envVars['FIREBASE_MEASUREMENT_ID'] ?? web.measurementId,
         );
       case TargetPlatform.linux:
         throw UnsupportedError(
