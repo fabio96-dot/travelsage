@@ -3,6 +3,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:travel_sage/models/spesa.dart';
 import 'package:travel_sage/models/viaggio.dart';
 import 'package:travel_sage/utils/splitwise_logic.dart';
+import 'giorno_itinerario_page.dart';
+import 'package:intl/intl.dart';
 
 class ViaggioDettaglioPage extends StatefulWidget {
   final Viaggio viaggio;
@@ -443,6 +445,38 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
     );
   }
 
+  Widget _buildItinerarioTab() {
+  final giorniTotali = widget.viaggio.dataFine.difference(widget.viaggio.dataInizio).inDays + 1;
+
+  return ListView.builder(
+    itemCount: giorniTotali,
+    itemBuilder: (context, index) {
+      final giorno = widget.viaggio.dataInizio.add(Duration(days: index));
+      final giornoFormat = DateFormat('EEEE dd MMMM yyyy', 'it_IT').format(giorno);
+      
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: ListTile(
+          title: Text('Giorno ${index + 1}'),
+          subtitle: Text(giornoFormat),
+          trailing: const Icon(Icons.arrow_forward_ios),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => GiornoItinerarioPage(
+                  giorno: giorno,
+                  viaggio: widget.viaggio, 
+                ),
+              ),
+            );// per ora lista vuota, in futuro salvata nel modello
+          },
+        ),
+      );
+    },
+  );
+  }
+
   Widget _buildPieChart() {
     Map<String, double> totalePerPartecipante = {};
     for (var p in widget.viaggio.partecipanti) {
@@ -509,7 +543,7 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          const Center(child: Text('Sezione Itinerario - da implementare')),
+          _buildItinerarioTab(),
           const Center(child: Text('Sezione Pernottamenti - da implementare')),
           _buildRiepilogoCosti(),
         ],
