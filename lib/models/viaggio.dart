@@ -79,19 +79,53 @@ class Viaggio {
     );
   }
 
-  // Metodi per gestire l'itinerario
-  void aggiungiAttivita(DateTime giorno, Attivita attivita) {
-    final key = _formatDayKey(giorno);
-    itinerario[key] = [...itinerario[key] ?? [], attivita];
+  // Calcola il totale delle spese
+  double get totaleSpese {
+    return spese.fold(0, (sum, spesa) => sum + spesa.importo);
   }
 
-  void rimuoviAttivita(DateTime giorno, String attivitaId) {
-    final key = _formatDayKey(giorno);
-    itinerario[key]?.removeWhere((a) => a.id == attivitaId);
-    if (itinerario[key]?.isEmpty ?? false) {
-      itinerario.remove(key);
+  // Calcola le spese per partecipante
+  Map<String, double> get spesePerPartecipante {
+    final map = <String, double>{};
+    for (final partecipante in partecipanti) {
+      map[partecipante] = spese
+          .where((s) => s.pagatore == partecipante)
+          .fold(0, (sum, spesa) => sum + spesa.importo);
+    }
+    return map;
+  }
+
+  // Calcola la quota equa per partecipante
+  double get quotaEqua {
+    return partecipanti.isEmpty ? 0 : totaleSpese / partecipanti.length;
+  }
+
+  // Metodi per gestire l'itinerario
+
+  void aggiungiAttivita(DateTime giorno, Attivita attivita) {
+  final key = _formatDayKey(giorno);
+  itinerario[key] = [...itinerario[key] ?? [], attivita];
+}
+
+
+  void modificaAttivita(DateTime giorno, String attivitaId, Attivita nuovaAttivita) {
+  final key = _formatDayKey(giorno);
+  final attivitaGiorno = itinerario[key];
+  if (attivitaGiorno != null) {
+    final index = attivitaGiorno.indexWhere((a) => a.id == attivitaId);
+    if (index != -1) {
+      attivitaGiorno[index] = nuovaAttivita;
     }
   }
+}
+
+  void rimuoviAttivita(DateTime giorno, String attivitaId) {
+  final key = _formatDayKey(giorno);
+  itinerario[key]?.removeWhere((a) => a.id == attivitaId);
+  if (itinerario[key]?.isEmpty ?? false) {
+    itinerario.remove(key);
+  }
+}
 
   List<Attivita>? attivitaDelGiorno(DateTime giorno) {
     return itinerario[_formatDayKey(giorno)];

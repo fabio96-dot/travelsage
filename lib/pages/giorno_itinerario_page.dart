@@ -45,6 +45,71 @@ class _GiornoItinerarioPageState extends State<GiornoItinerarioPage> with Ticker
     super.dispose();
   }
 
+void _modificaAttivita(Attivita attivita, int index) async {
+  final result = await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => AggiungiAttivitaPage(
+        giorno: widget.giorno,
+        viaggio: widget.viaggio,
+        attivitaEsistente: attivita,
+      ),
+    ),
+  );
+  
+  if (result != null && result is Attivita) {
+    setState(() {
+      widget.viaggio.modificaAttivita(widget.giorno, attivita.id, result);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Attività modificata con successo!"),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+void _eliminaAttivita(int index) async {
+  final attivitaDaEliminare = widget.viaggio.attivitaDelGiorno(widget.giorno)?[index];
+  if (attivitaDaEliminare == null) return;
+
+  final conferma = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Conferma eliminazione'),
+      content: const Text('Sei sicuro di voler eliminare questa attività?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Annulla'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (conferma == true) {
+    setState(() {
+      widget.viaggio.rimuoviAttivita(widget.giorno, attivitaDaEliminare.id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Attività eliminata con successo!"),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+
   @override
   Widget build(BuildContext context) {
     final data = DateFormat('EEEE d MMMM yyyy', 'it_IT').format(widget.giorno);
@@ -118,23 +183,36 @@ class _GiornoItinerarioPageState extends State<GiornoItinerarioPage> with Ticker
     );
   }
 
-  Widget _buildListItem(Attivita att, int index, String orario) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.deepPurple,
-          child: Text(
-            '${index + 1}',
-            style: const TextStyle(color: Colors.white),
-          ),
+Widget _buildListItem(Attivita att, int index, String orario) {
+  return Card(
+    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: ListTile(
+      leading: CircleAvatar(
+        backgroundColor: Colors.deepPurple,
+        child: Text(
+          '${index + 1}',
+          style: const TextStyle(color: Colors.white),
         ),
-        title: Text(att.titolo),
-        subtitle: Text('$orario - ${att.luogo ?? "Nessun luogo"}'),
-        onTap: () {
-          // dettagli attività
-        },
       ),
-    );
-  }
+      title: Text(att.titolo),
+      subtitle: Text('$orario - ${att.luogo ?? "Nessun luogo"}'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit, size: 20),
+            onPressed: () => _modificaAttivita(att, index),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, size: 20),
+            onPressed: () => _eliminaAttivita(index),
+          ),
+        ],
+      ),
+      onTap: () {
+        // dettagli attività
+      },
+    ),
+  );
+}
 }

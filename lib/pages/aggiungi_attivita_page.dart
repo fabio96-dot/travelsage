@@ -6,11 +6,13 @@ import '../models/viaggio.dart';
 class AggiungiAttivitaPage extends StatefulWidget {
   final DateTime giorno;
   final Viaggio viaggio;
+  final Attivita? attivitaEsistente;
 
   const AggiungiAttivitaPage({
     super.key,
     required this.giorno,
     required this.viaggio,
+    this.attivitaEsistente,
   });
 
   @override
@@ -20,10 +22,11 @@ class AggiungiAttivitaPage extends StatefulWidget {
 class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final titoloController = TextEditingController();
-  final luogoController = TextEditingController();
-  final descrizioneController = TextEditingController();
-  TimeOfDay? orario;
+  late TextEditingController titoloController;
+  late TextEditingController luogoController;
+  late TextEditingController descrizioneController;
+  late TimeOfDay? orario;
+  late bool completata;
 
   late AnimationController _animController;
   late Animation<double> _fadeIn;
@@ -31,6 +34,21 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
   @override
   void initState() {
     super.initState();
+    
+    // Inizializza i controller con i valori esistenti se presenti
+    titoloController = TextEditingController(text: widget.attivitaEsistente?.titolo ?? '');
+    luogoController = TextEditingController(text: widget.attivitaEsistente?.luogo ?? '');
+    descrizioneController = TextEditingController(text: widget.attivitaEsistente?.descrizione ?? '');
+    completata = widget.attivitaEsistente?.completata ?? false;
+    
+    // Imposta l'orario iniziale
+    if (widget.attivitaEsistente != null) {
+      orario = TimeOfDay.fromDateTime(widget.attivitaEsistente!.orario);
+    } else {
+      orario = null;
+    }
+
+    // Animazioni
     _animController =
         AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     _fadeIn = CurvedAnimation(parent: _animController, curve: Curves.easeInOut);
@@ -40,6 +58,9 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
   @override
   void dispose() {
     _animController.dispose();
+    titoloController.dispose();
+    luogoController.dispose();
+    descrizioneController.dispose();
     super.dispose();
   }
 
@@ -54,15 +75,16 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
         orario!.minute,
       );
 
-      final nuova = Attivita(
-        id: const Uuid().v4(),
+      final attivita = Attivita(
+        id: widget.attivitaEsistente?.id ?? const Uuid().v4(),
         titolo: titoloController.text.trim(),
         descrizione: descrizioneController.text.trim(),
         orario: dateTime,
         luogo: luogoController.text.trim(),
+        completata: completata,
       );
 
-      Navigator.pop(context, nuova);
+      Navigator.pop(context, attivita);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -76,13 +98,21 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
   @override
   Widget build(BuildContext context) {
     final data = DateFormat('EEEE d MMMM yyyy', 'it_IT').format(widget.giorno);
+    final isModifica = widget.attivitaEsistente != null;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor, // ✅ supporta dark mode
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text('Nuova attività - $data'),
+        title: Text('${isModifica ? 'Modifica' : 'Nuova'} attività - $data'),
+        actions: [
+          if (isModifica)
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: salvaAttivita,
+            ),
+        ],
       ),
       body: FadeTransition(
         opacity: _fadeIn,
@@ -94,7 +124,7 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor, // ✅ supporta dark mode
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
@@ -150,17 +180,16 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                         const Spacer(),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,     // ✅ usa primary dinamico
-                            foregroundColor: Theme.of(context).colorScheme.onPrimary,   // ✅ contrasto leggibile
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          
                           onPressed: () async {
                             final picked = await showTimePicker(
                               context: context,
-                              initialTime: TimeOfDay.now(),
+                              initialTime: orario ?? TimeOfDay.now(),
                             );
                             if (picked != null) {
                               setState(() => orario = picked);
@@ -170,13 +199,25 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                         ),
                       ],
                     ),
+                    if (isModifica) ...[
+                      const SizedBox(height: 16),
+                      SwitchListTile(
+                        title: const Text('Attività completata'),
+                        value: completata,
+                        onChanged: (value) {
+                          setState(() {
+                            completata = value;
+                          });
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 30),
                     ElevatedButton.icon(
                       onPressed: salvaAttivita,
                       icon: const Icon(Icons.check),
-                      label: const Text(
-                        "Salva attività",
-                        style: TextStyle(fontSize: 16),
+                      label: Text(
+                        "${isModifica ? 'Salva modifiche' : 'Salva attività'}",
+                        style: const TextStyle(fontSize: 16),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
