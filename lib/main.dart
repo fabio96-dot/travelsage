@@ -23,6 +23,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:js' as js;
 import 'app_wrapper.dart';
+import 'theme/app_themes.dart';
 
 
 void main() async {
@@ -198,16 +199,8 @@ class TravelSageApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'TravelSage',
-      theme: ThemeData(
-        primarySwatch: Colors.indigo,
-        brightness: Brightness.light,
-        textTheme: GoogleFonts.poppinsTextTheme(),
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.indigo,
-        textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
-      ),
+      theme: AppThemes.lightTheme,              // 👈 nuovo tema chiaro
+      darkTheme: AppThemes.darkTheme,           // 👈 nuovo tema scuro
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
