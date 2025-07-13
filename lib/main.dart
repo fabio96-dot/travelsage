@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart';
 import 'pages/theme_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -19,69 +18,158 @@ import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'dart:js' as js;
+import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
 import 'app_wrapper.dart';
 import 'theme/app_themes.dart';
 import 'package:travel_sage/services/firestore_service.dart';
+import 'package:pedantic/pedantic.dart';
+import 'dart:async';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('it_IT', null);
   
-  // Mostra immediatamente lo splash
-  runApp(const MaterialApp(
-    home: SplashScreen(),
-    debugShowCheckedModeBanner: false,
-  ));
+  runZonedGuarded(() async {
+    await initializeDateFormatting('it_IT', null);
+    
+    // Mostra immediatamente lo splash
+    runApp(const MaterialApp(
+      home: SplashScreen(),
+      debugShowCheckedModeBanner: false,
+    ));
 
-  // Inizializza l'app in background
-  _initializeAppAsync();
+    try {
+      await _initializeEssentialServices();
+      _runMainApp();
+    } catch (e, stack) {
+      _handleStartupError(e, stack);
+    }
+    }, (error, stack) {
+    _handleStartupError(error, stack);
+    });
+}
+
+Future<void> _initializeEssentialServices() async {
+  // 1. Inizializza formattazione date
+  await initializeDateFormatting('it_IT', null);
+
+  // 2. Configurazione base (senza attendere)
+  unawaited(WebConfig.waitForConfig().catchError((e) {
+    debugPrint("Config error: $e");
+  }));
+
+  // 3. Firebase con recovery
+  await _initializeFirebaseWithRetry();
+
+  // 4. Carica i font in background
+  unawaited(_loadFontsAsync());
 }
 
 Future<void> _initializeAppAsync() async {
   try {
-    // Carica le configurazioni
-    if (kIsWeb) {
-      await _waitForEnvJs();
-    } else {
-      await dotenv.load(fileName: '.env');
+    // 1. Configurazione base
+    await initializeDateFormatting('it_IT', null);
+    unawaited(WebConfig.waitForConfig().catchError((e) => debugPrint("Config error: $e")));
+
+    // 2. Prova l'inizializzazione principale
+    try {
+      await _initializeFirebaseWithRetry(maxRetries: 5);
+    } catch (e) {
+      debugPrint("Main Firebase init failed, trying fallback...");
+      await _initializeFirebaseFallback();
     }
 
-    // Inizializza Firebase
-    await Firebase.initializeApp(
-      options: kIsWeb ? _getWebFirebaseOptions() : DefaultFirebaseOptions.currentPlatform,
-    );
+    // 3. Caricamenti non bloccanti
+    unawaited(_loadFontsAsync());
+    unawaited(FirebaseAnalytics.instance.logAppOpen().catchError((e) => debugPrint("Analytics error: $e")));
 
-    // Configura Crashlytics solo per mobile
-    if (!kIsWeb) {
-      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
-    }
-
-    // Inizializza Google Fonts
-    await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
-
-    // Attendi 1 secondo per lo splash screen
-    await Future.delayed(const Duration(seconds: 1));
-
-    // Registra l'apertura dell'app (funziona sia su web che mobile)
-    await FirebaseAnalytics.instance.logAppOpen();
-
-    // Avvia l'app principale
-    runApp(const AppWrapper());
+    // 4. Avvia l'app
+    _runMainApp();
   } catch (e, stack) {
-    // Registra l'errore su Crashlytics (solo mobile)
-    if (!kIsWeb) {
-      await FirebaseCrashlytics.instance.recordError(e, stack);
-    }
-    
-    // Mostra la schermata di errore
-    _runErrorApp(e.toString());
+    debugPrint("App initialization failed: $e\n$stack");
+    _handleStartupError(e.toString(), stack);
   }
 }
 
-void _runErrorApp(String error) {
+Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
+  int attempts = 0;
+  
+  while (attempts < maxRetries) {
+    try {
+      // 1. Verifica se Firebase è già inizializzato
+      if (Firebase.apps.isNotEmpty) {
+        debugPrint("Firebase già inizializzato");
+        return;
+      }
+
+      // 2. Inizializza con timeout più lungo
+      final app = await Firebase.initializeApp(
+        options: kIsWeb 
+            ? WebConfig.firebaseOptions 
+            : DefaultFirebaseOptions.currentPlatform,
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint("Firebase initialized: ${app.name}");
+      
+      // 3. Configurazioni post-inizializzazione
+      if (!kIsWeb) {
+        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+      }
+      
+      return;
+    } on TimeoutException catch (e) {
+      debugPrint("Firebase timeout attempt ${attempts + 1}: $e");
+      attempts++;
+      await Future.delayed(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint("Firebase init error (attempt ${attempts + 1}): ${e.toString()}");
+      if (attempts == maxRetries - 1) {
+        throw Exception("Firebase initialization failed after $maxRetries attempts: ${e.toString()}");
+      }
+      attempts++;
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+}
+
+Future<void> _initializeFirebaseFallback() async {
+  try {
+    // Prova con opzioni di default se il metodo principale fallisce
+    await Firebase.initializeApp();
+    debugPrint("Firebase initialized with fallback method");
+  } catch (e) {
+    debugPrint("Fallback initialization failed: $e");
+    throw e;
+  }
+}
+
+Future<void> _loadFontsAsync() async {
+  try {
+    await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
+  } catch (e) {
+    debugPrint("Font loading error: $e");
+  }
+}
+
+void _runMainApp() {
+  // Aggiungi un delay minimo per lo splash screen
+  Future.delayed(const Duration(milliseconds: 1500), () {
+    runApp(const AppWrapper());
+    // Analytics in background
+    unawaited(FirebaseAnalytics.instance.logAppOpen().catchError((e) {
+      debugPrint("Analytics error: $e");
+    }));
+  });
+}
+
+void _handleStartupError(dynamic e, StackTrace stack) {
+  debugPrint("STARTUP ERROR: $e\n$stack");
+  
+  if (!kIsWeb) {
+    unawaited(FirebaseCrashlytics.instance.recordError(e, stack));
+  }
+
   runApp(MaterialApp(
     home: Scaffold(
       body: Center(
@@ -98,7 +186,7 @@ void _runErrorApp(String error) {
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Text(
-                    error,
+                    e.toString(),
                     style: GoogleFonts.roboto(color: Colors.red),
                     textAlign: TextAlign.center,
                   ),
@@ -108,16 +196,29 @@ void _runErrorApp(String error) {
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                   ),
-                  onPressed: () => main(), // Riavvia l'app
+                  onPressed: () => main(),
                   child: Text('Riprova', style: GoogleFonts.roboto(fontSize: 16)),
                 ),
+                if (!kIsWeb) ...[
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[700],
+                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                    ),
+                    onPressed: () => _runMainApp(), // Prova senza Firebase
+                    child: Text('Continua senza Firebase', 
+                         style: GoogleFonts.roboto(fontSize: 16)),
+                  ),
+                ],
               ],
             ),
           ),
         ),
       ),
     ),
-  ));
+  ),
+  );
 }
 
 class SplashScreen extends StatelessWidget {
@@ -156,36 +257,6 @@ class SplashScreen extends StatelessWidget {
     );
   }
 }
-
-Future<void> _waitForEnvJs() async {
-  const maxAttempts = 50; // 5 secondi totali (50 * 100ms)
-  int attempts = 0;
-  
-  while (js.context['flutterConfig'] == null && attempts < maxAttempts) {
-    await Future.delayed(const Duration(milliseconds: 100));
-    attempts++;
-  }
-  
-  if (js.context['flutterConfig'] == null) {
-    throw Exception('Configurazione web non caricata entro il timeout');
-  }
-}
-
-FirebaseOptions _getWebFirebaseOptions() {
-  final config = js.context['flutterConfig'];
-  if (config == null) throw Exception('env.js non caricato!');
-
-  return FirebaseOptions(
-    apiKey: config['apiKey'],
-    authDomain: config['authDomain'],
-    projectId: config['projectId'],
-    storageBucket: config['storageBucket'],
-    messagingSenderId: config['messagingSenderId'],
-    appId: config['appId'],
-    measurementId: config['measurementId'],
-  );
-}
-
 
 List<Viaggio> viaggiBozza = [];
 

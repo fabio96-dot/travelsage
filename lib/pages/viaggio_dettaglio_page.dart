@@ -562,7 +562,7 @@ Widget _buildRiepilogoCosti() {
 
         // Grafico
         const Padding(
-          padding: EdgeInsets.only(left: 16, top: 16),
+          padding: EdgeInsets.only(right: 16, left: 16, top: 10, bottom: 24),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -572,7 +572,7 @@ Widget _buildRiepilogoCosti() {
           ),
         ),
         SizedBox(
-          height: 220,
+          height: 260,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _buildBarChart(spesePerPartecipante),
@@ -616,12 +616,14 @@ Widget _buildRiepilogoCosti() {
 }
 
 Widget _buildBarChart(Map<String, double> data) {
-  // Calcola il valore massimo e l'intervallo
   final maxValue = data.values.fold(0.0, (max, value) => value > max ? value : max);
   final interval = _calculateInterval(maxValue);
-  final needCompactFormat = maxValue > 1000; // Formato compatto sopra 1.000€
+  final needCompactFormat = maxValue > 1000;
 
-   return BarChart(
+  // Arrotonda il massimo al multiplo dell'intervallo successivo
+  final fixedMaxY = ((maxValue / interval).ceil() * interval).toDouble();
+
+  return BarChart(
     BarChartData(
       gridData: FlGridData(show: false),
       borderData: FlBorderData(show: false),
@@ -629,18 +631,13 @@ Widget _buildBarChart(Map<String, double> data) {
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: needCompactFormat ? 36 : 42,
+            reservedSize: needCompactFormat ? 42 : 48,
             interval: interval,
             getTitlesWidget: (value, meta) {
-              // Formattazione condizionale
-              final formattedValue = needCompactFormat
-                  ? _compactValue(value)
-                  : '€${value.toInt()}';
-              
               return Padding(
-                padding: EdgeInsets.only(right: needCompactFormat ? 2.0 : 4.0),
+                padding: const EdgeInsets.only(right: 4.0),
                 child: Text(
-                  formattedValue,
+                  _formatValue(value, needCompactFormat),
                   style: TextStyle(
                     fontSize: needCompactFormat ? 9 : 10,
                     color: Colors.grey,
@@ -658,8 +655,8 @@ Widget _buildBarChart(Map<String, double> data) {
               final index = value.toInt();
               if (index >= 0 && index < data.length) {
                 final name = data.keys.elementAt(index);
-                final displayName = name.length > 8 
-                    ? '${name.substring(0, 6)}..' 
+                final displayName = name.length > 8
+                    ? '${name.substring(0, 6)}..'
                     : name;
                 return Text(
                   displayName,
@@ -691,21 +688,24 @@ Widget _buildBarChart(Map<String, double> data) {
         );
       }).toList(),
       minY: 0,
-      maxY: maxValue * 1.1,
+      maxY: fixedMaxY,
     ),
   );
 }
 
-String _compactValue(double value) {
+// ✅ Formattazione compatta per valori grandi
+String _formatValue(double value, bool compact) {
+  if (!compact) return '€${value.toInt()}';
   if (value >= 1000000) {
-    return '€${(value/1000000).toStringAsFixed(1)}M';
+    return '€${(value / 1000000).toStringAsFixed(1)}M';
+  } else if (value >= 1000) {
+    return '€${(value / 1000).toStringAsFixed(value % 1000 == 0 ? 0 : 1)}k';
+  } else {
+    return '€${value.toInt()}';
   }
-  if (value >= 1000) {
-    return '€${(value/1000).toStringAsFixed(value % 1000 == 0 ? 0 : 1)}k';
-  }
-  return '€${value.toInt()}';
 }
 
+// ✅ Logica intervallo coerente
 double _calculateInterval(double maxValue) {
   if (maxValue <= 500) return 100;
   if (maxValue <= 2000) return 200;
