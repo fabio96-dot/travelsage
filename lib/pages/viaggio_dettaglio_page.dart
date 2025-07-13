@@ -5,6 +5,7 @@ import 'package:travel_sage/models/viaggio.dart';
 import 'package:travel_sage/utils/splitwise_logic.dart';
 import 'giorno_itinerario_page.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ViaggioDettaglioPage extends StatefulWidget {
   final Viaggio viaggio;
@@ -18,11 +19,14 @@ class ViaggioDettaglioPage extends StatefulWidget {
 
 class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final List<Spesa> spese = []; // Spostato qui e inizializzato direttamente
+    late TabController _tabController;
+    final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+    // Stato locale per la lista spese
+    List<Spesa> _spese = [];
 
 
-  final List<Tab> myTabs = <Tab>[
+    final List<Tab> myTabs = <Tab>[
     const Tab(text: 'Itinerario'),
     const Tab(text: 'Pernottamenti'),
     const Tab(text: 'Riepilogo Costi'),
@@ -32,6 +36,24 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: myTabs.length, vsync: this);
+     _loadSpese();
+  }
+
+  Future<void> _loadSpese() async {
+    final viaggioId = widget.viaggio.id;
+    final snapshot = await _firestore
+        .collection('viaggi')
+        .doc(viaggioId)
+        .collection('spese')
+        .get();
+
+    final speseList = snapshot.docs
+        .map((doc) => Spesa.fromJson(doc.data()))
+        .toList();
+
+    setState(() {
+      _spese = speseList;
+    });
   }
 
   @override
@@ -40,7 +62,7 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
     super.dispose();
   }
 
-  void _aggiungiSpesa() {
+Future<void> _aggiungiSpesa() async {
 
       if (widget.viaggio.partecipanti.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -60,9 +82,9 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
     List<String> selezionati = [];
     bool _importoInvalido = false;
     bool _pagatoreNonSelezionato = false;
-    bool _nessunCoinvolto = false;
+    bool _nessunCoinvolto = false; 
 
-    showModalBottomSheet(
+  await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -86,241 +108,52 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Descrizione',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.description),
-                  ),
-                  onChanged: (val) => descrizione = val,
-                ),
-                const SizedBox(height: 16),
-
-                TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Importo (€)',
-                    prefixIcon: const Icon(Icons.euro),
-                    border: const OutlineInputBorder(),
-                    errorText: _importoInvalido ? 'Inserisci un numero valido' : null,
-                  ),
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (val) {
-                    importo = val;
-                    setModalState(() {
-                      _importoInvalido = double.tryParse(val) == null;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                
-                // Selezione Pagatore
-                InputDecorator(
-                    decoration: InputDecoration(
-                    labelText: 'Chi ha pagato',
-                    border: const OutlineInputBorder(),
-                    errorText: _pagatoreNonSelezionato ? 'Seleziona un pagatore' : null,
-                    suffixIcon: pagatore.isNotEmpty 
-                        ? const Icon(Icons.check_circle, color: Colors.green)
-                        : null,
-                    ),
-                    child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      hint: const Text('Seleziona', style: TextStyle(color: Colors.grey)),
-                      value: pagatore.isEmpty ? null : pagatore, // Aggiungi questa linea
-                      items: widget.viaggio.partecipanti.map((p) {
-                      return DropdownMenuItem(value: p,child: Text(p,style: TextStyle(
-                      color: pagatore == p ? Colors.indigo : Colors.black, // Evidenzia selezione
-                      fontWeight: pagatore == p ? FontWeight.bold : FontWeight.normal,
-                      ),
-                     ),
-                    );
-                  }).toList(),
-                        onChanged: (val) {
-                        pagatore = val ?? '';
-                        setModalState(() {
-                        _pagatoreNonSelezionato = val == null;
-                      });
-                    },
-                    dropdownColor: Colors.white,
-                    icon: const Icon(Icons.arrow_drop_down),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Coinvolti con indicatore errore
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Coinvolti', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                if (_nessunCoinvolto)
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Seleziona almeno un coinvolto', 
-                      style: TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                Wrap(
-                  spacing: 8,
-                  children: widget.viaggio.partecipanti.map((p) {
-                    final selected = selezionati.contains(p);
-                    return FilterChip(
-                      label: Text(p),
-                      selected: selected,
-                      onSelected: (val) {
-                        setModalState(() {
-                          if (val) {
-                            selezionati.add(p);
-                          } else {
-                            selezionati.remove(p);
-                          }
-                          _nessunCoinvolto = selezionati.isEmpty;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 24),
-                
-                // Pulsante Salva
-                ElevatedButton(
-                  onPressed: () {
-                    // Validazione finale
-                    bool valid = true;
-                    if (descrizione.isEmpty) valid = false;
-                    if (double.tryParse(importo) == null) {
-                      setModalState(() => _importoInvalido = true);
-                      valid = false;
-                    }
-                    if (pagatore.isEmpty) {
-                      setModalState(() => _pagatoreNonSelezionato = true);
-                      valid = false;
-                    }
-                    if (selezionati.isEmpty) {
-                      setModalState(() => _nessunCoinvolto = true);
-                      valid = false;
-                    }
-                    
-                    if (valid) {
-                      final nuovaSpesa = Spesa(
-                        id: UniqueKey().toString(), // Aggiungi ID univoco
-                        descrizione: descrizione,
-                        importo: double.parse(importo),
-                        pagatore: pagatore,
-                        coinvolti: List.from(selezionati),
-                        data: DateTime.now(),
-                      );
-                       setState(() {
-                        widget.viaggio.spese.add(nuovaSpesa);
-                      });
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: const Text('Spesa aggiunta con successo!'),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                    backgroundColor: Colors.indigo,
-                  ),
-                  child: const Text('Salva Spesa', style: TextStyle(fontSize: 16)),
-                ),
-                const SizedBox(height: 16),
-              ],
-            );
-          },
-        ),
-      );
-    },
-  );
-}
-
-void _modificaSpesa(int index) {
-  final spesa = widget.viaggio.spese[index];
-  String descrizione = spesa.descrizione;
-  String importo = spesa.importo.toString();
-  String pagatore = spesa.pagatore;
-  List<String> selezionati = List.from(spesa.coinvolti);
-
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-              left: 16,
-              right: 16,
-              top: 24,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Modifica Spesa',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  // Campo Descrizione
-                  TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Descrizione',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      prefixIcon: Icon(Icons.description),
                     ),
-                    initialValue: descrizione,
                     onChanged: (val) => descrizione = val,
                   ),
                   const SizedBox(height: 16),
-                  
-                  // Campo Importo
-                  TextFormField(
-                    decoration: const InputDecoration(
+                  TextField(
+                    decoration: InputDecoration(
                       labelText: 'Importo (€)',
-                      border: OutlineInputBorder(),
-                      prefixText: '€',
-                      contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      prefixIcon: const Icon(Icons.euro),
+                      border: const OutlineInputBorder(),
+                      errorText: _importoInvalido ? 'Inserisci un numero valido' : null,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    initialValue: importo,
-                    onChanged: (val) => importo = val,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (val) {
+                      importo = val;
+                      setModalState(() {
+                        _importoInvalido = double.tryParse(val) == null;
+                      });
+                    },
                   ),
                   const SizedBox(height: 16),
-                  
-                  // Selezione Pagatore
                   InputDecorator(
                     decoration: InputDecoration(
                       labelText: 'Chi ha pagato',
                       border: const OutlineInputBorder(),
+                      errorText: _pagatoreNonSelezionato ? 'Seleziona un pagatore' : null,
                       suffixIcon: pagatore.isNotEmpty
-                          ? const Icon(Icons.check, color: Colors.green)
+                          ? const Icon(Icons.check_circle, color: Colors.green)
                           : null,
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        value: pagatore,
+                        hint: const Text('Seleziona', style: TextStyle(color: Colors.grey)),
+                        value: pagatore.isEmpty ? null : pagatore,
                         items: widget.viaggio.partecipanti.map((p) {
                           return DropdownMenuItem(
                             value: p,
                             child: Text(
                               p,
                               style: TextStyle(
-                                color: pagatore == p 
-                                    ? Colors.green 
-                                    : Colors.black,
+                                color: pagatore == p ? Colors.indigo : Colors.black,
                                 fontWeight: pagatore == p
                                     ? FontWeight.bold
                                     : FontWeight.normal,
@@ -329,24 +162,30 @@ void _modificaSpesa(int index) {
                           );
                         }).toList(),
                         onChanged: (val) {
+                          pagatore = val ?? '';
                           setModalState(() {
-                            pagatore = val ?? '';
+                            _pagatoreNonSelezionato = val == null;
                           });
                         },
+                        dropdownColor: Colors.white,
+                        icon: const Icon(Icons.arrow_drop_down),
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
-                  // Coinvolti
-                  const Text(
-                    'Coinvolti:',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Coinvolti', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
-                  const SizedBox(height: 8),
+                  if (_nessunCoinvolto)
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Seleziona almeno un coinvolto',
+                          style: TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
                   Wrap(
                     spacing: 8,
-                    runSpacing: 8,
                     children: widget.viaggio.partecipanti.map((p) {
                       final selected = selezionati.contains(p);
                       return FilterChip(
@@ -359,111 +198,323 @@ void _modificaSpesa(int index) {
                             } else {
                               selezionati.remove(p);
                             }
+                            _nessunCoinvolto = selezionati.isEmpty;
                           });
                         },
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 24),
-                  
-                  // Pulsanti
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[300],
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                  ElevatedButton(
+                    onPressed: () async {
+                      bool valid = true;
+                      if (descrizione.isEmpty) valid = false;
+                      if (double.tryParse(importo) == null) {
+                        setModalState(() => _importoInvalido = true);
+                        valid = false;
+                      }
+                      if (pagatore.isEmpty) {
+                        setModalState(() => _pagatoreNonSelezionato = true);
+                        valid = false;
+                      }
+                      if (selezionati.isEmpty) {
+                        setModalState(() => _nessunCoinvolto = true);
+                        valid = false;
+                      }
+
+                      if (valid) {
+                        final nuovaSpesa = Spesa(
+                          id: UniqueKey().toString(),
+                          descrizione: descrizione,
+                          importo: double.parse(importo),
+                          pagatore: pagatore,
+                          coinvolti: List.from(selezionati),
+                          data: DateTime.now(),
+                        );
+
+                        // Salva su Firestore
+                        final speseRef = _firestore
+                            .collection('viaggi')
+                            .doc(widget.viaggio.id)
+                            .collection('spese');
+                        await speseRef.doc(nuovaSpesa.id).set(nuovaSpesa.toJson());
+
+                        setState(() {
+                          _spese.add(nuovaSpesa);
+                        });
+
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Spesa aggiunta con successo!'),
+                            duration: Duration(seconds: 2),
                           ),
-                          child: const Text('Annulla'),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (descrizione.isNotEmpty && 
-                                importo.isNotEmpty && 
-                                pagatore.isNotEmpty && 
-                                selezionati.isNotEmpty) {
-                              final spesaModificata = Spesa(
-                                id: spesa.id,
-                                descrizione: descrizione,
-                                importo: double.tryParse(importo) ?? 0.0,
-                                pagatore: pagatore,
-                                coinvolti: List.from(selezionati),
-                                data: spesa.data,
-                              );
-                              setState(() {
-                                widget.viaggio.spese[index] = spesaModificata;
-                              });
-                              Navigator.pop(context);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: const Text('Salva'),
-                        ),
-                      ),
-                    ],
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                      backgroundColor: Colors.indigo,
+                    ),
+                    child: const Text('Salva Spesa', style: TextStyle(fontSize: 16)),
                   ),
                   const SizedBox(height: 16),
                 ],
-              ),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
-
-void _eliminaSpesa(int index) {
-  showDialog(
-    context: context,
-    builder: (BuildContext dialogContext) {
-      return AlertDialog(
-        title: const Text('Conferma eliminazione'),
-        content: const Text('Vuoi davvero eliminare questa spesa?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annulla'),
-          ),
-          TextButton(
-            onPressed: () {
-              // Esegui l'eliminazione
-              setState(() {
-                widget.viaggio.spese.removeAt(index);
-              });
-              
-              // Chiudi sia la dialog che eventuali snackbar
-              Navigator.pop(dialogContext);
-              
-              // Mostra conferma
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Spesa eliminata con successo'),
-                  duration: Duration(seconds: 2),
-                ),
               );
             },
-            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+
+Future<void> _modificaSpesa(int index) async {
+    final spesa = _spese[index];
+    String descrizione = spesa.descrizione;
+    String importo = spesa.importo.toString();
+    String pagatore = spesa.pagatore;
+    List<String> selezionati = List.from(spesa.coinvolti);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 16,
+                right: 16,
+                top: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Modifica Spesa',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Descrizione',
+                        border: OutlineInputBorder(),
+                        contentPadding:
+                            EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      ),
+                      initialValue: descrizione,
+                      onChanged: (val) => descrizione = val,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Importo (€)',
+                        border: OutlineInputBorder(),
+                        prefixText: '€',
+                        contentPadding:
+                            EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      ),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      initialValue: importo,
+                      onChanged: (val) => importo = val,
+                    ),
+                    const SizedBox(height: 16),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Chi ha pagato',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: pagatore.isNotEmpty
+                            ? const Icon(Icons.check, color: Colors.green)
+                            : null,
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: pagatore,
+                          items: widget.viaggio.partecipanti.map((p) {
+                            return DropdownMenuItem(
+                              value: p,
+                              child: Text(
+                                p,
+                                style: TextStyle(
+                                  color: pagatore == p ? Colors.green : Colors.black,
+                                  fontWeight: pagatore == p
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            setModalState(() {
+                              pagatore = val ?? '';
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Coinvolti:',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: widget.viaggio.partecipanti.map((p) {
+                        final selected = selezionati.contains(p);
+                        return FilterChip(
+                          label: Text(p),
+                          selected: selected,
+                          onSelected: (val) {
+                            setModalState(() {
+                              if (val) {
+                                selezionati.add(p);
+                              } else {
+                                selezionati.remove(p);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey[300],
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
+                            child: const Text('Annulla'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              if (descrizione.isNotEmpty &&
+                                  importo.isNotEmpty &&
+                                  pagatore.isNotEmpty &&
+                                  selezionati.isNotEmpty) {
+                                final spesaModificata = Spesa(
+                                  id: spesa.id,
+                                  descrizione: descrizione,
+                                  importo: double.tryParse(importo) ?? 0.0,
+                                  pagatore: pagatore,
+                                  coinvolti: List.from(selezionati),
+                                  data: spesa.data,
+                                );
+
+                                // Aggiorna Firestore
+                                final speseRef = _firestore
+                                    .collection('viaggi')
+                                    .doc(widget.viaggio.id)
+                                    .collection('spese');
+                                await speseRef
+                                    .doc(spesaModificata.id)
+                                    .set(spesaModificata.toJson());
+
+                                setState(() {
+                                  _spese[index] = spesaModificata;
+                                });
+
+                                Navigator.pop(context);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.indigo,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
+                            child: const Text('Salva'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+ Future<void> _eliminaSpesa(int index) async {
+    final conferma = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Conferma eliminazione'),
+          content: const Text('Vuoi davvero eliminare questa spesa?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Annulla'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (conferma == true) {
+      final spesaId = _spese[index].id;
+      final speseRef = _firestore
+          .collection('viaggi')
+          .doc(widget.viaggio.id)
+          .collection('spese');
+
+      await speseRef.doc(spesaId).delete();
+
+      setState(() {
+        _spese.removeAt(index);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Spesa eliminata con successo'),
+          duration: Duration(seconds: 2),
+        ),
       );
-    },
-  );
-}
+    }
+  }
+
 
 Widget _buildRiepilogoCosti() {
+  final totaleSpese = _spese.fold(0.0, (sum, s) => sum + s.importo);
+  final partecipanti = widget.viaggio.partecipanti;
+
+  final spesePerPartecipante = <String, double>{};
+  for (final p in partecipanti) {
+    spesePerPartecipante[p] = _spese
+      .where((s) => s.pagatore == p)
+      .fold(0.0, (sum, s) => sum + s.importo);
+  }
+
+  final quotaEqua = partecipanti.isEmpty ? 0.0 : totaleSpese / partecipanti.length;
+
   final transactions = SplitwiseLogic.calculateOptimizedTransactions(
-    widget.viaggio.spese, 
-    widget.viaggio.partecipanti
+    _spese, // usa _spese, non widget.viaggio.spese
+    partecipanti,
   );
   
   return SingleChildScrollView(
@@ -488,7 +539,7 @@ Widget _buildRiepilogoCosti() {
                   children: [
                     const Text('Totale speso:'),
                     Text(
-                      '€${widget.viaggio.totaleSpese.toStringAsFixed(2)}',
+                      '€${totaleSpese.toStringAsFixed(2)}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -499,7 +550,7 @@ Widget _buildRiepilogoCosti() {
                   children: [
                     const Text('Media per persona:'),
                     Text(
-                      '€${widget.viaggio.quotaEqua.toStringAsFixed(2)}',
+                      '€${quotaEqua.toStringAsFixed(2)}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -524,7 +575,7 @@ Widget _buildRiepilogoCosti() {
           height: 220,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _buildBarChart(widget.viaggio.spesePerPartecipante),
+            child: _buildBarChart(spesePerPartecipante),
           ),
         ),
 
@@ -558,7 +609,7 @@ Widget _buildRiepilogoCosti() {
             ),
           ),
         ),
-        ...widget.viaggio.spese.map((spesa) => _buildExpenseTile(spesa)),
+        ..._spese.map((spesa) => _buildExpenseTile(spesa)),
       ],
     ),
   );
@@ -713,11 +764,11 @@ Widget _buildExpenseTile(Spesa spesa) {
         children: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () => _modificaSpesa(widget.viaggio.spese.indexOf(spesa)),
+            onPressed: () => _modificaSpesa(_spese.indexOf(spesa)),
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: () => _eliminaSpesa(widget.viaggio.spese.indexOf(spesa)),
+            onPressed: () => _eliminaSpesa(_spese.indexOf(spesa)),
           ),
         ],
       ),
@@ -781,7 +832,9 @@ Widget build(BuildContext context) {
     floatingActionButton: Padding(
       padding: const EdgeInsets.only(bottom: 16), // Spazio sotto il pulsante
       child: FloatingActionButton.extended(
-        onPressed: _aggiungiSpesa,
+            onPressed: () async {
+      await _aggiungiSpesa();
+      },
         icon: const Icon(Icons.add),
         label: const Text('Aggiungi Spesa'),
       ),

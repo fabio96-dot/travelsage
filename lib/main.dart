@@ -15,8 +15,6 @@ import 'pages/modifica_viaggio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
 import 'models/travel_state.dart';
-import 'core/config/env.dart';
-import 'widgets/app_initializer.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -24,6 +22,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:js' as js;
 import 'app_wrapper.dart';
 import 'theme/app_themes.dart';
+import 'package:travel_sage/services/firestore_service.dart';
 
 
 void main() async {
@@ -329,46 +328,53 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
 
   void _submit() {
     if (_formKey.currentState!.validate() &&
-      startDate != null &&
-      endDate != null &&
-      participants.isNotEmpty) {
+        startDate != null &&
+        endDate != null &&
+        participants.isNotEmpty) {
 
-    final nuovoViaggio = Viaggio(
-      id: UniqueKey().toString(), // Genera un ID univoco
-      titolo: destination.trim(),
-      destinazione: destination.trim(),
-      dataInizio: startDate!,
-      dataFine: endDate!,
-      budget: budget.trim(),
-      partecipanti: List.from(participants),
-      confermato: false,
-      spese: [], // Lista vuota di spese
-      archiviato: false, // Valore di default
-      note: null, // Note opzionali
-      itinerario: {}, // Mappa vuota per l'itinerario
-    );
+      final nuovoViaggio = Viaggio(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        titolo: destination.trim(),
+        destinazione: destination.trim(),
+        dataInizio: startDate!,
+        dataFine: endDate!,
+        budget: budget.trim(),
+        partecipanti: List.from(participants),
+        confermato: false,
+        spese: [],
+        archiviato: false,
+        note: null,
+        itinerario: {},
+      );
 
-    widget.onViaggioCreato(nuovoViaggio);
+      // Salva viaggio e aggiorna lista tramite callback
+      FirestoreService().saveViaggio(nuovoViaggio).then((_) {
+        widget.onViaggioCreato(nuovoViaggio);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Viaggio creato con successo')),
+        );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Viaggio creato con successo')),
-    );
+        // Naviga ai dettagli viaggio appena creato
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViaggioDettaglioPage(
+              viaggio: nuovoViaggio,
+              index: -1, // Passa -1 o gestisci diversamente se non hai indice
+            ),
+          ),
+        );
+      }).catchError((e) {
+        print('Errore salvataggio viaggio: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Errore nel salvataggio del viaggio')),
+        );
+      });
 
-    final int newIndex = viaggiBozza.length - 1;
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ViaggioDettaglioPage(
-          viaggio: nuovoViaggio,
-          index: newIndex,
-        ),
-      ),
-    );
     } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Completa tutti i campi')),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Completa tutti i campi')),
+      );
     }
   }
 
@@ -527,36 +533,63 @@ class TripsPage extends StatefulWidget {
 }
 
 class _TripsPageState extends State<TripsPage> {
+  List<Viaggio> viaggiBozza = [];
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(Duration.zero, _archiviaViaggiScaduti);
+    Future.delayed(Duration.zero, () async {
+      await _caricaViaggi();
+      _archiviaViaggiScaduti();
+    });
+  }
+
+  Future<void> _caricaViaggi() async {
+    try {
+      final viaggi = await FirestoreService().getViaggi();
+      setState(() {
+        viaggiBozza = viaggi;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore caricamento viaggi: $e')),
+      );
+    }
   }
 
   void _archiviaViaggiScaduti() {
     final oggi = DateTime.now();
     final viaggiArchiviati = <String>[];
 
-    setState(() {
-      for (int i = 0; i < viaggiBozza.length; i++) {
-        final viaggio = viaggiBozza[i];
-        final dataFine = viaggio.dataFine;
+    bool aggiorna = false;
 
-        // Archivia solo viaggi confermati e non già archiviati
-        final nonArchiviato = !viaggio.archiviato;
-        final confermato = viaggio.confermato;
-        final scaduto = dataFine.isBefore(oggi);
+    for (int i = 0; i < viaggiBozza.length; i++) {
+      final viaggio = viaggiBozza[i];
+      final dataFine = viaggio.dataFine;
 
-        if (confermato && nonArchiviato && scaduto) {
-          viaggiBozza[i] = viaggio.copyWith(archiviato: true);
-          TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione});
-        }
+      final nonArchiviato = !viaggio.archiviato;
+      final confermato = viaggio.confermato;
+      final scaduto = dataFine.isBefore(oggi);
+
+      if (confermato && nonArchiviato && scaduto) {
+        viaggiBozza[i] = viaggio.copyWith(archiviato: true);
+        TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione}); // Cambiato per più leggibilità
+        aggiorna = true;
       }
-    });
+    }
+
+    if (aggiorna) {
+      setState(() {});  // Aggiorna UI se cambiamenti
+    }
 
     if (TravelState.viaggiDaArchiviare.isNotEmpty) {
       final snackText = '${TravelState.viaggiDaArchiviare.length} viaggi archiviati automaticamente';
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(snackText),
@@ -574,7 +607,8 @@ class _TripsPageState extends State<TripsPage> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('OK')),
+                      child: const Text('OK'),
+                    ),
                   ],
                 ),
               );
@@ -597,7 +631,8 @@ class _TripsPageState extends State<TripsPage> {
             child: const Text('Annulla'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              await FirestoreService().deleteViaggio(viaggiBozza[index].id);
               setState(() {
                 viaggiBozza.removeAt(index);
               });
@@ -613,7 +648,6 @@ class _TripsPageState extends State<TripsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final viaggiNonArchiviati = viaggiBozza.where((v) => !v.archiviato).toList();
 
     return Scaffold(
@@ -621,9 +655,11 @@ class _TripsPageState extends State<TripsPage> {
       appBar: AppBar(
         title: const Text('Viaggi salvati'),
       ),
-      body: viaggiNonArchiviati.isEmpty
-          ? const SkeletonLoader()
-          : _buildViaggiGrid(context, viaggiNonArchiviati),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : (viaggiNonArchiviati.isEmpty
+              ? const SkeletonLoader()
+              : _buildViaggiGrid(context, viaggiNonArchiviati)),
       floatingActionButton: FloatingActionButton(
         onPressed: widget.onAddNewTrip,
         backgroundColor: Colors.indigo,
@@ -635,7 +671,7 @@ class _TripsPageState extends State<TripsPage> {
 
   Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     int cardsPerRow;
     double cardHeight;
 
@@ -667,7 +703,9 @@ class _TripsPageState extends State<TripsPage> {
           final viaggio = viaggiNonArchiviati[index];
           final originalIndex = viaggiBozza.indexOf(viaggio);
           final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
-          final titoloDaMostrare = viaggio.titolo.isNotEmpty ? viaggio.titolo : 'Viaggio a ${viaggio.destinazione}';
+          final titoloDaMostrare = viaggio.titolo.isNotEmpty
+              ? viaggio.titolo
+              : 'Viaggio a ${viaggio.destinazione}';
 
           return InkWell(
             key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
@@ -729,25 +767,28 @@ class _TripsPageState extends State<TripsPage> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                              titoloDaMostrare, // Usa la variabile qui
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            titoloDaMostrare,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (!viaggio.confermato)
                           ElevatedButton(
-                            onPressed: () {
+                            onPressed: () async {
+                              final confermatoViaggio = viaggio.copyWith(confermato: true);
+                              await FirestoreService().saveViaggio(confermatoViaggio);
                               setState(() {
-                                viaggiBozza[originalIndex] = viaggio.copyWith(confermato: true);
+                                viaggiBozza[originalIndex] = confermatoViaggio;
                               });
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.indigoAccent,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -764,8 +805,8 @@ class _TripsPageState extends State<TripsPage> {
                     Text(
                       '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
-                      ),
+                            color: Colors.white70,
+                          ),
                     ),
                     const SizedBox(height: 6),
                     Row(
