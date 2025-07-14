@@ -1,66 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="TravelSage Web">
+  <base href="$FLUTTER_BASE_HREF">
 
+  <title>TravelSage</title>
+
+  <!-- Firebase compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+
+  <!-- ✅ Configurazione Firebase JS -->
   <script>
-  // Misura il tempo di caricamento
-  var appStartTime = Date.now();
-  window.addEventListener('flutter-first-frame', function() {
-    var loadTime = Date.now() - appStartTime;
-    console.log('App loaded in ' + loadTime + 'ms');
-  });
+    window.flutterConfig = {
+      apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
+      authDomain: "travelsage-2fbbc.firebaseapp.com",
+      projectId: "travelsage-2fbbc",
+      storageBucket: "travelsage-2fbbc.firebasestorage.app",
+      messagingSenderId: "1051759939227",
+      appId: "1:1051759939227:web:b34f7d629a4d79935d003e",
+      measurementId: "G-RJZKZXNDNW"
+    };
   </script>
 
-  <!-- Aggiungi prima del main.dart.js -->
-  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-  <script src="env.js"></script>
+  <!-- Loading splash -->
+  <style>
+    #loading {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-family: sans-serif;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
 
-  <body>
   <div id="loading">
     <img src="assets/logo_travelsage.png" width="150" />
     <p>Caricamento...</p>
   </div>
 
   <script>
-    // Rimuovi il loader dopo che Flutter parte
+    var appStartTime = Date.now();
     window.addEventListener('flutter-first-frame', function () {
+      var loadTime = Date.now() - appStartTime;
+      console.log('App loaded in ' + loadTime + 'ms');
       document.getElementById('loading')?.remove();
     });
   </script>
 
-  <script src="flutter_bootstrap.js" async></script>
-  </body>
-
-  <style>
-  #loading {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    font-family: sans-serif;
-    color: #555;
-  }
-  </style>
-
-  <base href="$FLUTTER_BASE_HREF">
-
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="travel_sage">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>travel_sage</title>
-  <link rel="manifest" href="manifest.json">
-</head>
-<body>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

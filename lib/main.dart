@@ -24,123 +24,84 @@ import 'theme/app_themes.dart';
 import 'package:travel_sage/services/firestore_service.dart';
 import 'package:pedantic/pedantic.dart';
 import 'dart:async';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 
-void main() async {
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  runZonedGuarded(() async {
-    await initializeDateFormatting('it_IT', null);
-    
-    // Mostra immediatamente lo splash
-    runApp(const MaterialApp(
-      home: SplashScreen(),
-      debugShowCheckedModeBanner: false,
-    ));
 
-    try {
-      await _initializeEssentialServices();
-      _runMainApp();
-    } catch (e, stack) {
-      _handleStartupError(e, stack);
-    }
-    }, (error, stack) {
-    _handleStartupError(error, stack);
-    });
+  // Carica .env prima di tutto (assicurati che il file .env sia nella root)
+  await dotenv.load(fileName: ".env");
+
+  // Inizializza formattazione data italiana
+  await initializeDateFormatting('it_IT', null);
+
+  // Mostra subito splash screen
+  runApp(const MaterialApp(
+    home: SplashScreen(),
+    debugShowCheckedModeBanner: false,
+  ));
+
+  try {
+    await _initializeEssentialServices();
+    _runMainApp();
+  } catch (e, stack) {
+    _handleStartupError(e, stack);
+  }
 }
 
 Future<void> _initializeEssentialServices() async {
-  // 1. Inizializza formattazione date
+  // Ricarica formattazione data per sicurezza (opzionale)
   await initializeDateFormatting('it_IT', null);
 
-  // 2. Configurazione base (senza attendere)
+  // Attendi configurazione web (no-op su mobile)
   unawaited(WebConfig.waitForConfig().catchError((e) {
     debugPrint("Config error: $e");
   }));
 
-  // 3. Firebase con recovery
+  // Inizializza Firebase con retry e logging
   await _initializeFirebaseWithRetry();
 
-  // 4. Carica i font in background
+  // Carica font Google in background (opzionale)
   unawaited(_loadFontsAsync());
-}
-
-Future<void> _initializeAppAsync() async {
-  try {
-    // 1. Configurazione base
-    await initializeDateFormatting('it_IT', null);
-    unawaited(WebConfig.waitForConfig().catchError((e) => debugPrint("Config error: $e")));
-
-    // 2. Prova l'inizializzazione principale
-    try {
-      await _initializeFirebaseWithRetry(maxRetries: 5);
-    } catch (e) {
-      debugPrint("Main Firebase init failed, trying fallback...");
-      await _initializeFirebaseFallback();
-    }
-
-    // 3. Caricamenti non bloccanti
-    unawaited(_loadFontsAsync());
-    unawaited(FirebaseAnalytics.instance.logAppOpen().catchError((e) => debugPrint("Analytics error: $e")));
-
-    // 4. Avvia l'app
-    _runMainApp();
-  } catch (e, stack) {
-    debugPrint("App initialization failed: $e\n$stack");
-    _handleStartupError(e.toString(), stack);
-  }
 }
 
 Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
   int attempts = 0;
-  
+
   while (attempts < maxRetries) {
     try {
-      // 1. Verifica se Firebase è già inizializzato
+      debugPrint("Tentativo Firebase init #${attempts + 1}");
+
       if (Firebase.apps.isNotEmpty) {
         debugPrint("Firebase già inizializzato");
         return;
       }
 
-      // 2. Inizializza con timeout più lungo
       final app = await Firebase.initializeApp(
-        options: kIsWeb 
-            ? WebConfig.firebaseOptions 
-            : DefaultFirebaseOptions.currentPlatform,
+        options: kIsWeb ? WebConfig.firebaseOptions : DefaultFirebaseOptions.currentPlatform,
       ).timeout(const Duration(seconds: 15));
 
       debugPrint("Firebase initialized: ${app.name}");
-      
-      // 3. Configurazioni post-inizializzazione
+
       if (!kIsWeb) {
         await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
         FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
       }
-      
+
       return;
     } on TimeoutException catch (e) {
       debugPrint("Firebase timeout attempt ${attempts + 1}: $e");
-      attempts++;
-      await Future.delayed(const Duration(seconds: 3));
-    } catch (e) {
-      debugPrint("Firebase init error (attempt ${attempts + 1}): ${e.toString()}");
+    } catch (e, st) {
+      debugPrint("Firebase init error (attempt ${attempts + 1}): $e\n$st");
       if (attempts == maxRetries - 1) {
-        throw Exception("Firebase initialization failed after $maxRetries attempts: ${e.toString()}");
+        throw Exception("Firebase initialization failed after $maxRetries attempts: $e");
       }
-      attempts++;
-      await Future.delayed(const Duration(seconds: 2));
     }
-  }
-}
 
-Future<void> _initializeFirebaseFallback() async {
-  try {
-    // Prova con opzioni di default se il metodo principale fallisce
-    await Firebase.initializeApp();
-    debugPrint("Firebase initialized with fallback method");
-  } catch (e) {
-    debugPrint("Fallback initialization failed: $e");
-    throw e;
+    attempts++;
+    await Future.delayed(const Duration(seconds: 2));
   }
 }
 
@@ -152,21 +113,24 @@ Future<void> _loadFontsAsync() async {
   }
 }
 
-void _runMainApp() {
-  // Aggiungi un delay minimo per lo splash screen
+void _runMainApp({bool skipFirebase = false}) {
   Future.delayed(const Duration(milliseconds: 1500), () {
     runApp(const AppWrapper());
-    // Analytics in background
-    unawaited(FirebaseAnalytics.instance.logAppOpen().catchError((e) {
-      debugPrint("Analytics error: $e");
-    }));
+
+    if (!skipFirebase && Firebase.apps.isNotEmpty) {
+      unawaited(FirebaseAnalytics.instance
+          .logAppOpen()
+          .catchError((e) => debugPrint("Analytics error: $e")));
+    }
   });
 }
 
 void _handleStartupError(dynamic e, StackTrace stack) {
   debugPrint("STARTUP ERROR: $e\n$stack");
-  
-  if (!kIsWeb) {
+
+  final isFirebaseReady = Firebase.apps.isNotEmpty;
+
+  if (!kIsWeb && isFirebaseReady) {
     unawaited(FirebaseCrashlytics.instance.recordError(e, stack));
   }
 
@@ -181,8 +145,10 @@ void _handleStartupError(dynamic e, StackTrace stack) {
               children: [
                 const Icon(Icons.error_outline, color: Colors.red, size: 50),
                 const SizedBox(height: 20),
-                Text('Errore durante l\'inizializzazione:', 
-                     style: GoogleFonts.roboto(fontSize: 18)),
+                Text(
+                  'Errore durante l\'inizializzazione:',
+                  style: GoogleFonts.roboto(fontSize: 18),
+                ),
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Text(
@@ -193,9 +159,6 @@ void _handleStartupError(dynamic e, StackTrace stack) {
                 ),
                 const SizedBox(height: 30),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  ),
                   onPressed: () => main(),
                   child: Text('Riprova', style: GoogleFonts.roboto(fontSize: 16)),
                 ),
@@ -204,21 +167,19 @@ void _handleStartupError(dynamic e, StackTrace stack) {
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                     ),
-                    onPressed: () => _runMainApp(), // Prova senza Firebase
-                    child: Text('Continua senza Firebase', 
-                         style: GoogleFonts.roboto(fontSize: 16)),
+                    onPressed: () => _runMainApp(skipFirebase: true),
+                    child: Text('Continua senza Firebase',
+                        style: GoogleFonts.roboto(fontSize: 16)),
                   ),
-                ],
+                ]
               ],
             ),
           ),
         ),
       ),
     ),
-  ),
-  );
+  ));
 }
 
 class SplashScreen extends StatelessWidget {
@@ -241,7 +202,7 @@ class SplashScreen extends StatelessWidget {
             LinearProgressIndicator(
               backgroundColor: Colors.grey[200],
               valueColor: AlwaysStoppedAnimation<Color>(
-              Theme.of(context).primaryColor,
+                Theme.of(context).primaryColor,
               ),
             ),
             Text(

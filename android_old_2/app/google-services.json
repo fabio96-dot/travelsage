@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1051759939227",
+    "project_id": "travelsage-2fbbc",
+    "storage_bucket": "travelsage-2fbbc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051759939227:android:d7927544336b17aa5d003e",
+        "android_client_info": {
+          "package_name": "com.example.travel_sage"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWBu_dTZCy_mRmooX5lkGwLLseIXLKwEs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051759939227:android:3502c697466665d35d003e",
+        "android_client_info": {
+          "package_name": "com.travel.sage"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWBu_dTZCy_mRmooX5lkGwLLseIXLKwEs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

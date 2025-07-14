@@ -34,8 +34,8 @@ class DefaultFirebaseOptions {
 
   // Configurazione per Android
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIza...', // Sostituisci con la tua chiave Android
-    appId: '1:1051759939227:android:...', // Sostituisci con il tuo app ID Android
+    apiKey: 'AIzaSyAWBu_dTZCy_mRmooX5lkGwLLseIXLKwEs',
+    appId: '1:1051759939227:android:d7927544336b17aa5d003e',
     messagingSenderId: '1051759939227',
     projectId: 'travelsage-2fbbc',
     storageBucket: 'travelsage-2fbbc.appspot.com',

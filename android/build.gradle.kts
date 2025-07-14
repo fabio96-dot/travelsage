@@ -1,15 +1,14 @@
-// Top-level build file (Kotlin DSL)
 buildscript {
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        // NOTA: Qui si usa "classpath" perché siamo nel blocco buildscript
-        classpath("com.android.tools.build:gradle:8.0.0")
+        classpath("com.android.tools.build:gradle:7.4.1")
         classpath("com.google.gms:google-services:4.3.15")
     }
 }
+
 
 allprojects {
     repositories {
@@ -18,17 +17,18 @@ allprojects {
     }
 }
 
-// Configurazione personalizzata della cartella build (opzionale)
-val newBuildDir = layout.buildDirectory.dir("../../build").get()
-layout.buildDirectory.set(newBuildDir)
+val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir = newBuildDir.dir(project.name)
-    layout.buildDirectory.set(newSubprojectBuildDir)
-    // Dipendenza dall'app (necessaria solo per alcuni moduli)
-    evaluationDependsOn(":app")
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
+subprojects {
+    project.evaluationDependsOn(":app")
 }
 
-tasks.register("clean", Delete::class) {
-    delete(rootProject.buildDir)
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
+
