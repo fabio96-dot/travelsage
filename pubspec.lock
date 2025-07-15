@@ -393,7 +393,7 @@ packages:
     source: sdk
     version: "0.0.0"
   flutterfire_cli:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: flutterfire_cli
       sha256: "1c405f181130fcf8f85f3d9ec320660bdf36fb7a40632f538a124bb798d612db"

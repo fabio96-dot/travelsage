@@ -15,10 +15,7 @@ import 'package:flutter/foundation.dart'
 /// await Firebase.initializeApp(
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
-Future<void> main() async {
-  await dotenv.load(fileName: ".env");
 
-}
 
 class DefaultFirebaseOptions {
   // Configurazione per web

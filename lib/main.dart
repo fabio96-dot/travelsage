@@ -29,42 +29,33 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 
 Future<void> main() async {
+  // 1. Inizializzazione obbligatoria di Flutter
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Carica .env prima di tutto (assicurati che il file .env sia nella root)
-  await dotenv.load(fileName: ".env");
-
-  // Inizializza formattazione data italiana
-  await initializeDateFormatting('it_IT', null);
-
-  // Mostra subito splash screen
+  // 2. Mostra IMMEDIATAMENTE la splash screen
   runApp(const MaterialApp(
     home: SplashScreen(),
     debugShowCheckedModeBanner: false,
   ));
 
   try {
-    await _initializeEssentialServices();
+    // 3. Caricamento configurazioni essenziali
+    await dotenv.load(fileName: ".env");
+    await initializeDateFormatting('it_IT', null);
+
+    // 4. Inizializzazione Firebase con gestione errori
+    await _initializeFirebaseWithRetry();
+
+    // 5. Caricamento font in background
+    unawaited(_loadGoogleFonts());
+
+    // 6. Avvio app principale dopo breve delay per la splash
+    await Future.delayed(const Duration(milliseconds: 1500));
     _runMainApp();
   } catch (e, stack) {
+    // 7. Gestione errori con UI dedicata
     _handleStartupError(e, stack);
   }
-}
-
-Future<void> _initializeEssentialServices() async {
-  // Ricarica formattazione data per sicurezza (opzionale)
-  await initializeDateFormatting('it_IT', null);
-
-  // Attendi configurazione web (no-op su mobile)
-  unawaited(WebConfig.waitForConfig().catchError((e) {
-    debugPrint("Config error: $e");
-  }));
-
-  // Inizializza Firebase con retry e logging
-  await _initializeFirebaseWithRetry();
-
-  // Carica font Google in background (opzionale)
-  unawaited(_loadFontsAsync());
 }
 
 Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
@@ -72,29 +63,26 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
 
   while (attempts < maxRetries) {
     try {
-      debugPrint("Tentativo Firebase init #${attempts + 1}");
+      debugPrint("🔥 Tentativo ${attempts + 1} di inizializzazione Firebase");
 
-      if (Firebase.apps.isNotEmpty) {
-        debugPrint("Firebase già inizializzato");
+      if (Firebase.apps.isEmpty) {
+        final app = await Firebase.initializeApp(
+          options: kIsWeb ? WebConfig.firebaseOptions : DefaultFirebaseOptions.currentPlatform,
+        ).timeout(const Duration(seconds: 15));
+
+        debugPrint("✅ Firebase inizializzato: ${app.name}");
+
+        // Configura Crashlytics solo su mobile
+        if (!kIsWeb) {
+          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+          FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+        }
         return;
       }
-
-      final app = await Firebase.initializeApp(
-        options: kIsWeb ? WebConfig.firebaseOptions : DefaultFirebaseOptions.currentPlatform,
-      ).timeout(const Duration(seconds: 15));
-
-      debugPrint("Firebase initialized: ${app.name}");
-
-      if (!kIsWeb) {
-        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
-      }
-
-      return;
     } on TimeoutException catch (e) {
-      debugPrint("Firebase timeout attempt ${attempts + 1}: $e");
-    } catch (e, st) {
-      debugPrint("Firebase init error (attempt ${attempts + 1}): $e\n$st");
+      debugPrint("⏱ Timeout Firebase: $e");
+    } catch (e, stack) {
+      debugPrint("❌ Errore inizializzazione Firebase: $e\n$stack");
       if (attempts == maxRetries - 1) {
         throw Exception("Firebase initialization failed after $maxRetries attempts: $e");
       }
@@ -105,81 +93,84 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
   }
 }
 
-Future<void> _loadFontsAsync() async {
+Future<void> _loadGoogleFonts() async {
   try {
     await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
+    debugPrint("✅ Font caricati con successo");
   } catch (e) {
-    debugPrint("Font loading error: $e");
+    debugPrint("⚠️ Errore caricamento font: $e");
   }
 }
 
-void _runMainApp({bool skipFirebase = false}) {
-  Future.delayed(const Duration(milliseconds: 1500), () {
-    runApp(const AppWrapper());
+void _runMainApp() {
+  runApp(const AppWrapper());
 
-    if (!skipFirebase && Firebase.apps.isNotEmpty) {
-      unawaited(FirebaseAnalytics.instance
-          .logAppOpen()
-          .catchError((e) => debugPrint("Analytics error: $e")));
-    }
-  });
+  // Registra l'apertura dell'app in background
+  if (Firebase.apps.isNotEmpty) {
+    FirebaseAnalytics.instance.logAppOpen();
+  }
 }
 
 void _handleStartupError(dynamic e, StackTrace stack) {
-  debugPrint("STARTUP ERROR: $e\n$stack");
+  debugPrint("‼️ ERRORE CRITICO: $e\n$stack");
 
-  final isFirebaseReady = Firebase.apps.isNotEmpty;
-
-  if (!kIsWeb && isFirebaseReady) {
-    unawaited(FirebaseCrashlytics.instance.recordError(e, stack));
+  if (!kIsWeb && Firebase.apps.isNotEmpty) {
+    FirebaseCrashlytics.instance.recordError(e, stack);
   }
 
-  runApp(MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 50),
-                const SizedBox(height: 20),
-                Text(
-                  'Errore durante l\'inizializzazione:',
-                  style: GoogleFonts.roboto(fontSize: 18),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    e.toString(),
-                    style: GoogleFonts.roboto(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                ElevatedButton(
-                  onPressed: () => main(),
-                  child: Text('Riprova', style: GoogleFonts.roboto(fontSize: 16)),
-                ),
-                if (!kIsWeb) ...[
+  runApp(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 50),
                   const SizedBox(height: 20),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[700],
-                    ),
-                    onPressed: () => _runMainApp(skipFirebase: true),
-                    child: Text('Continua senza Firebase',
-                        style: GoogleFonts.roboto(fontSize: 16)),
+                  Text(
+                    'Errore durante l\'avvio:',
+                    style: GoogleFonts.roboto(fontSize: 20),
                   ),
-                ]
-              ],
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      e.toString(),
+                      style: GoogleFonts.roboto(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: () => main(),
+                    child: Text(
+                      'Riprova', 
+                      style: GoogleFonts.roboto(fontSize: 16),
+                    ),
+                  ),
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[700],
+                      ),
+                      onPressed: () => _runMainApp(),
+                      child: Text(
+                        'Continua senza Firebase',
+                        style: GoogleFonts.roboto(fontSize: 16),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
 }
 
 class SplashScreen extends StatelessWidget {
@@ -205,6 +196,7 @@ class SplashScreen extends StatelessWidget {
                 Theme.of(context).primaryColor,
               ),
             ),
+            const SizedBox(height: 20),
             Text(
               'Caricamento...',
               style: GoogleFonts.roboto(
