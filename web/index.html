@@ -8,50 +8,33 @@
 
   <title>TravelSage</title>
 
-  <!-- Firebase compat -->
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
 
-  <!-- ✅ Configurazione Firebase JS -->
+  <!-- Configurazione Firebase -->
   <script>
-    window.flutterConfig = {
+    const firebaseConfig = {
       apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
       authDomain: "travelsage-2fbbc.firebaseapp.com",
       projectId: "travelsage-2fbbc",
-      storageBucket: "travelsage-2fbbc.firebasestorage.app",
+      storageBucket: "travelsage-2fbbc.appspot.com",
       messagingSenderId: "1051759939227",
       appId: "1:1051759939227:web:b34f7d629a4d79935d003e",
       measurementId: "G-RJZKZXNDNW"
     };
-  </script>
 
-  <!-- Loading splash -->
-  <style>
-    #loading {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      font-family: sans-serif;
-      color: #555;
+    // Inizializzazione immediata
+    try {
+      firebase.initializeApp(firebaseConfig);
+      console.log("Firebase initialized successfully");
+    } catch (e) {
+      console.error("Firebase initialization error:", e);
     }
-  </style>
+  </script>
 </head>
 <body>
-
-  <div id="loading">
-    <img src="assets/logo_travelsage.png" width="150" />
-    <p>Caricamento...</p>
-  </div>
-
-  <script>
-    var appStartTime = Date.now();
-    window.addEventListener('flutter-first-frame', function () {
-      var loadTime = Date.now() - appStartTime;
-      console.log('App loaded in ' + loadTime + 'ms');
-      document.getElementById('loading')?.remove();
-    });
-  </script>
-
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -24,37 +24,56 @@ import 'theme/app_themes.dart';
 import 'package:travel_sage/services/firestore_service.dart';
 import 'package:pedantic/pedantic.dart';
 import 'dart:async';
+import 'package:travel_sage/services/gemini_api.dart';
+import 'dart:convert';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 
 
 Future<void> main() async {
-  // 1. Inizializzazione obbligatoria di Flutter
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 2. Mostra IMMEDIATAMENTE la splash screen
+  
+  // Mostra subito la splash screen
   runApp(const MaterialApp(
     home: SplashScreen(),
     debugShowCheckedModeBanner: false,
   ));
 
   try {
-    // 3. Caricamento configurazioni essenziali
-    await dotenv.load(fileName: ".env");
-    await initializeDateFormatting('it_IT', null);
+    // Caricamento parallelo delle risorse
+    await Future.wait([
+      _loadConfigurations(),
+      _initializeEssentialServices(),
+    ], eagerError: true);
 
-    // 4. Inizializzazione Firebase con gestione errori
-    await _initializeFirebaseWithRetry();
-
-    // 5. Caricamento font in background
-    unawaited(_loadGoogleFonts());
-
-    // 6. Avvio app principale dopo breve delay per la splash
+    // Attesa minima per la splash screen (1.5s)
     await Future.delayed(const Duration(milliseconds: 1500));
+    
     _runMainApp();
   } catch (e, stack) {
-    // 7. Gestione errori con UI dedicata
     _handleStartupError(e, stack);
+  }
+}
+
+Future<void> _loadConfigurations() async {
+  try {
+    // Carica .env solo per mobile
+    if (!kIsWeb) await dotenv.load(fileName: ".env");
+    await initializeDateFormatting('it_IT', null);
+  } catch (e) {
+    debugPrint('Config error: $e');
+    if (!kIsWeb) rethrow;
+  }
+}
+
+Future<void> _initializeEssentialServices() async {
+  try {
+    await _initializeFirebaseWithRetry();
+    unawaited(_loadGoogleFonts()); // Carica i font in background
+  } catch (e) {
+    debugPrint('Services init error: $e');
+    rethrow;
   }
 }
 
@@ -66,15 +85,18 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
       debugPrint("🔥 Tentativo ${attempts + 1} di inizializzazione Firebase");
 
       if (Firebase.apps.isEmpty) {
-        final app = await Firebase.initializeApp(
-          options: kIsWeb ? WebConfig.firebaseOptions : DefaultFirebaseOptions.currentPlatform,
-        ).timeout(const Duration(seconds: 15));
+        final options = kIsWeb 
+            ? WebConfig.firebaseOptions 
+            : DefaultFirebaseOptions.currentPlatform;
+
+        final app = await Firebase.initializeApp(options: options)
+            .timeout(const Duration(seconds: 15));
 
         debugPrint("✅ Firebase inizializzato: ${app.name}");
 
-        // Configura Crashlytics solo su mobile
         if (!kIsWeb) {
-          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+          await FirebaseCrashlytics.instance
+              .setCrashlyticsCollectionEnabled(true);
           FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
         }
         return;
@@ -83,9 +105,7 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
       debugPrint("⏱ Timeout Firebase: $e");
     } catch (e, stack) {
       debugPrint("❌ Errore inizializzazione Firebase: $e\n$stack");
-      if (attempts == maxRetries - 1) {
-        throw Exception("Firebase initialization failed after $maxRetries attempts: $e");
-      }
+      if (attempts == maxRetries - 1) rethrow;
     }
 
     attempts++;
@@ -96,7 +116,6 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
 Future<void> _loadGoogleFonts() async {
   try {
     await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
-    debugPrint("✅ Font caricati con successo");
   } catch (e) {
     debugPrint("⚠️ Errore caricamento font: $e");
   }
@@ -105,7 +124,6 @@ Future<void> _loadGoogleFonts() async {
 void _runMainApp() {
   runApp(const AppWrapper());
 
-  // Registra l'apertura dell'app in background
   if (Firebase.apps.isNotEmpty) {
     FirebaseAnalytics.instance.logAppOpen();
   }
@@ -121,6 +139,7 @@ void _handleStartupError(dynamic e, StackTrace stack) {
   runApp(
     MaterialApp(
       home: Scaffold(
+        backgroundColor: Colors.grey[100],
         body: Center(
           child: SingleChildScrollView(
             child: Padding(
@@ -131,38 +150,31 @@ void _handleStartupError(dynamic e, StackTrace stack) {
                   const Icon(Icons.error_outline, color: Colors.red, size: 50),
                   const SizedBox(height: 20),
                   Text(
-                    'Errore durante l\'avvio:',
+                    kIsWeb ? 'Errore di connessione' : 'Errore nell\'avvio',
                     style: GoogleFonts.roboto(fontSize: 20),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Text(
-                      e.toString(),
+                      _simplifyErrorMessage(e.toString()),
                       style: GoogleFonts.roboto(color: Colors.red),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 30),
                   ElevatedButton(
                     onPressed: () => main(),
-                    child: Text(
-                      'Riprova', 
-                      style: GoogleFonts.roboto(fontSize: 16),
-                    ),
+                    child: const Text('Riprova'),
                   ),
                   if (!kIsWeb) ...[
                     const SizedBox(height: 20),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[700],
+                        backgroundColor: Colors.grey[300],
                       ),
                       onPressed: () => _runMainApp(),
-                      child: Text(
-                        'Continua senza Firebase',
-                        style: GoogleFonts.roboto(fontSize: 16),
-                      ),
+                      child: const Text('Continua senza Firebase'),
                     ),
-                  ],
+                  ]
                 ],
               ),
             ),
@@ -171,6 +183,15 @@ void _handleStartupError(dynamic e, StackTrace stack) {
       ),
     ),
   );
+}
+
+String _simplifyErrorMessage(String error) {
+  if (error.contains('Failed to load FirebaseOptions')) {
+    return kIsWeb 
+        ? 'Errore di connessione al server. Verifica la tua rete.'
+        : 'Configurazione Firebase mancante.';
+  }
+  return error;
 }
 
 class SplashScreen extends StatelessWidget {
@@ -313,6 +334,7 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 }
 
+
 class OrganizeTripPage extends StatefulWidget {
   final Function(Viaggio) onViaggioCreato;
 
@@ -329,6 +351,10 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
   DateTime? endDate;
   String budget = '';
   List<String> participants = [];
+  List<String> interessiDisponibili = [
+    'Cultura', 'Natura', 'Relax', 'Cibo', 'Sport', 'Storia', 'Arte',
+  ];
+  List<String> interessiSelezionati = [];
   final TextEditingController _participantController = TextEditingController();
 
   Future<void> _selectDate(bool isStart) async {
@@ -350,57 +376,102 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
     }
   }
 
-  void _submit() {
-    if (_formKey.currentState!.validate() &&
-        startDate != null &&
-        endDate != null &&
-        participants.isNotEmpty) {
+  DateTime _parseActivityTime(String timeString) {
+    final now = DateTime.now();
+    final timeParts = timeString.split(':');
+    return DateTime(
+      now.year, now.month, now.day,
+      int.parse(timeParts[0]),
+      int.parse(timeParts[1]),
+    );
+  }
 
-      final nuovoViaggio = Viaggio(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        titolo: destination.trim(),
-        destinazione: destination.trim(),
-        dataInizio: startDate!,
-        dataFine: endDate!,
-        budget: budget.trim(),
-        partecipanti: List.from(participants),
-        confermato: false,
-        spese: [],
-        archiviato: false,
-        note: null,
-        itinerario: {},
+Future<void> _submit() async {
+  if (_formKey.currentState!.validate() &&
+      startDate != null &&
+      endDate != null &&
+      participants.isNotEmpty) {
+    final nuovoViaggio = Viaggio(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      titolo: destination.trim(),
+      destinazione: destination.trim(),
+      dataInizio: startDate!,
+      dataFine: endDate!,
+      budget: budget.trim(),
+      partecipanti: List.from(participants),
+      confermato: false,
+      spese: [],
+      archiviato: false,
+      note: null,
+      itinerario: {},
+      interessi: List.from(interessiSelezionati),
+    );
+
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generazione itinerario...')),
       );
 
-      // Salva viaggio e aggiorna lista tramite callback
-      FirestoreService().saveViaggio(nuovoViaggio).then((_) {
-        widget.onViaggioCreato(nuovoViaggio);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Viaggio creato con successo')),
-        );
+      final gemini = GeminiApi('AIzaSyBEZtNzgh97bF5uk1YOS1uKvXNzEQoogcs');
+      final models = await gemini.listAvailableModels();
+      print('Modelli disponibili: $models');
+      
+      // Sposta tutta la logica dell'itinerario in un unico blocco try
+      final itinerarioJson = await gemini.generaItinerario(
+        destinazione: nuovoViaggio.destinazione, // Usa i valori dal form
+        dataInizio: nuovoViaggio.dataInizio,
+        dataFine: nuovoViaggio.dataFine,
+        budget: nuovoViaggio.budget,
+        interessi: nuovoViaggio.interessi,
+      );
 
-        // Naviga ai dettagli viaggio appena creato
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ViaggioDettaglioPage(
-              viaggio: nuovoViaggio,
-              index: -1, // Passa -1 o gestisci diversamente se non hai indice
-            ),
-          ),
-        );
-      }).catchError((e) {
-        print('Errore salvataggio viaggio: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Errore nel salvataggio del viaggio')),
-        );
+      print('🔍 Risposta Gemini JSON:\n$itinerarioJson');
+
+      final Map<String, dynamic> decoded = jsonDecode(itinerarioJson);
+      final Map<String, List<Attivita>> itinerario = {};
+
+      decoded.forEach((giorno, attivitaList) {
+        if (attivitaList is List) {
+          itinerario[giorno] = attivitaList.map<Attivita>((a) {
+            return Attivita(
+              id: const Uuid().v4(),
+              titolo: a['titolo'] ?? 'Attività',
+              descrizione: a['descrizione'] ?? '',
+              orario: _parseActivityTime(a['orario']),
+              luogo: a['luogo'],
+            );
+          }).toList();
+        }
       });
 
-    } else {
+      nuovoViaggio.itinerario = itinerario;
+
+      await FirestoreService().saveViaggio(nuovoViaggio);
+      widget.onViaggioCreato(nuovoViaggio);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa tutti i campi')),
+        const SnackBar(content: Text('Viaggio creato con successo')),
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+        ),
+      );
+    } catch (e, stackTrace) {
+      print('❌ Errore generazione viaggio: $e');
+      print(stackTrace);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore nella generazione del viaggio: $e')),
       );
     }
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Completa tutti i campi')),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -524,6 +595,33 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
                     child: const Icon(Icons.add),
                   )
                 ],
+              ),
+              const SizedBox(height: 32),
+              Text('Interessi del viaggio', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: interessiDisponibili.map((interesse) {
+                  final selezionato = interessiSelezionati.contains(interesse);
+                  return FilterChip(
+                    label: Text(interesse),
+                    selected: selezionato,
+                    onSelected: (bool selected) {
+                      setState(() {
+                        if (selected) {
+                          interessiSelezionati.add(interesse);
+                        } else {
+                          interessiSelezionati.remove(interesse);
+                        }
+                      });
+                    },
+                    selectedColor: Colors.indigo.shade200,
+                    checkmarkColor: Colors.white,
+                    labelStyle: TextStyle(
+                      color: selezionato ? Colors.white : Colors.black,
+                    ),
+                  );
+                }).toList(),
               ),
               const SizedBox(height: 32),
               SizedBox(

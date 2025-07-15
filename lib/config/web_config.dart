@@ -1,53 +1,21 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:js/js.dart'; // Import modificato
 import 'package:firebase_core/firebase_core.dart';
-import '../firebase_options.dart'; // Percorso relativo corretto
-
-@JS()
-external dynamic get context;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class WebConfig {
-  static dynamic get jsContext {
-    if (kIsWeb) {
-      return context;
-    }
-    return null;
-  }
-
   static FirebaseOptions get firebaseOptions {
-    if (!kIsWeb) throw UnsupportedError('Solo per web');
-    
-    try {
-      final config = jsContext['flutterConfig'];
-      if (config == null) throw Exception('Config JS mancante');
-      
-      return FirebaseOptions(
-        apiKey: config['apiKey'] as String,
-        authDomain: config['authDomain'] as String,
-        projectId: config['projectId'] as String,
-        storageBucket: config['storageBucket'] as String,
-        messagingSenderId: config['messagingSenderId'] as String,
-        appId: config['appId'] as String,
-        measurementId: config['measurementId'] as String?,
-      );
-    } catch (e) {
-      throw Exception('Errore configurazione web: $e');
-    }
+    return const FirebaseOptions(
+      apiKey: "AIzaSyDbmXGUoGFCDheDVTj0hw-wcyMPw98w23E",
+      authDomain: "travelsage-2fbbc.firebaseapp.com",
+      projectId: "travelsage-2fbbc",
+      storageBucket: "travelsage-2fbbc.appspot.com",
+      messagingSenderId: "1051759939227",
+      appId: "1:1051759939227:web:b34f7d629a4d79935d003e",
+      measurementId: "G-RJZKZXNDNW",
+    );
   }
 
   static Future<void> waitForConfig() async {
-    if (!kIsWeb) return;
-
-    const maxAttempts = 50;
-    int attempts = 0;
-    
-    while (jsContext['flutterConfig'] == null && attempts < maxAttempts) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      attempts++;
-    }
-    
-    if (jsContext['flutterConfig'] == null) {
-      throw Exception('Configurazione web non caricata entro il timeout');
-    }
+    // Non serve più attendere, la config è hardcoded
+    await Future.delayed(Duration.zero);
   }
 }

@@ -13,7 +13,8 @@ class Viaggio {
   final List<Spesa> spese;
   final bool archiviato;
   final String? note;
-  final Map<String, List<Attivita>> itinerario;
+  Map<String, List<Attivita>> itinerario;
+  final List<String> interessi;
 
   Viaggio({
     required this.id,
@@ -27,6 +28,7 @@ class Viaggio {
     this.spese = const [],
     this.archiviato = false,
     this.note,
+    this.interessi = const [], // 👈 nuovo campo
     Map<String, List<Attivita>>? itinerario,
   }) : itinerario = itinerario ?? {};
 
@@ -61,6 +63,7 @@ class Viaggio {
     List<Spesa>? spese,
     bool? archiviato,
     String? note,
+    List<String>? interessi, // 👈 nuovo parametro
     Map<String, List<Attivita>>? itinerario,
   }) {
     return Viaggio(
@@ -75,6 +78,7 @@ class Viaggio {
       spese: spese ?? this.spese,
       archiviato: archiviato ?? this.archiviato,
       note: note ?? this.note,
+      interessi: interessi ?? this.interessi, // 👈
       itinerario: itinerario ?? Map.from(this.itinerario),
     );
   }
@@ -152,6 +156,7 @@ class Viaggio {
           [],
       archiviato: json['archiviato'] ?? false,
       note: json['note'],
+      interessi: List<String>.from(json['interessi'] ?? []), // 👈 nuovo campo
       itinerario: json['itinerario'] != null
           ? (json['itinerario'] as Map<String, dynamic>).map(
               (key, value) => MapEntry(
@@ -176,6 +181,7 @@ class Viaggio {
       'spese': spese.map((s) => s.toJson()).toList(),
       'archiviato': archiviato,
       'note': note,
+      'interessi': interessi,
       'itinerario': itinerario.map(
         (key, value) => MapEntry(
           key,

@@ -39,6 +39,7 @@ dependencies:
   flutter_dotenv: ^5.2.1
   js: ^0.6.7
   pedantic: ^1.11.0  # Considera di rimuoverlo (deprecato)
+  http: ^1.4.0
 
 dev_dependencies:
   flutter_test:
@@ -52,7 +53,6 @@ flutter:
   assets:
     - assets/logo_travelsage.png
     - .env  # Aggiunto il file .env agli assets
-    - assets/images/  # Aggiungi altre cartelle se necessario
 
 flutter_launcher_icons:
   android: true
