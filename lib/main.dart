@@ -33,6 +33,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   
   // Mostra subito la splash screen
   runApp(const MaterialApp(
@@ -391,61 +392,131 @@ Future<void> _submit() async {
       startDate != null &&
       endDate != null &&
       participants.isNotEmpty) {
-    final nuovoViaggio = Viaggio(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      titolo: destination.trim(),
-      destinazione: destination.trim(),
-      dataInizio: startDate!,
-      dataFine: endDate!,
-      budget: budget.trim(),
-      partecipanti: List.from(participants),
-      confermato: false,
-      spese: [],
-      archiviato: false,
-      note: null,
-      itinerario: {},
-      interessi: List.from(interessiSelezionati),
-    );
-
     try {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Generazione itinerario...')),
       );
 
-      final gemini = GeminiApi('AIzaSyBEZtNzgh97bF5uk1YOS1uKvXNzEQoogcs');
-      final models = await gemini.listAvailableModels();
-      print('Modelli disponibili: $models');
-      
-      // Sposta tutta la logica dell'itinerario in un unico blocco try
-      final itinerarioJson = await gemini.generaItinerario(
-        destinazione: nuovoViaggio.destinazione, // Usa i valori dal form
-        dataInizio: nuovoViaggio.dataInizio,
-        dataFine: nuovoViaggio.dataFine,
-        budget: nuovoViaggio.budget,
-        interessi: nuovoViaggio.interessi,
+      final gemini = GeminiApi();
+
+      // Chiamata Gemini
+      final rawResponse = await gemini.generaItinerario(
+        destinazione: destination.trim(),
+        dataInizio: startDate!,
+        dataFine: endDate!,
+        budget: budget.trim(),
+        interessi: List.from(interessiSelezionati),
       );
 
-      print('🔍 Risposta Gemini JSON:\n$itinerarioJson');
+      print('🔍 Risposta raw Gemini:\n$rawResponse');
 
-      final Map<String, dynamic> decoded = jsonDecode(itinerarioJson);
+      // Funzione per estrarre JSON da testo misto
+      String estraiJson(String text) {
+        final start = text.indexOf('{');
+        final end = text.lastIndexOf('}');
+        if (start != -1 && end != -1 && end > start) {
+          return text.substring(start, end + 1);
+        }
+        throw FormatException('JSON non trovato nella risposta');
+      }
+
+      late final String jsonString;
+
+      try {
+        jsonString = estraiJson(rawResponse);
+      } catch (e) {
+        print('❌ Errore estrazione JSON: $e');
+        throw Exception('Risposta Gemini non contiene JSON valido');
+      }
+
+      print('🔍 JSON estratto:\n$jsonString');
+
+      // Decodifica JSON
+      final Map<String, dynamic> decoded = jsonDecode(jsonString);
       final Map<String, List<Attivita>> itinerario = {};
 
-      decoded.forEach((giorno, attivitaList) {
-        if (attivitaList is List) {
-          itinerario[giorno] = attivitaList.map<Attivita>((a) {
-            return Attivita(
-              id: const Uuid().v4(),
-              titolo: a['titolo'] ?? 'Attività',
-              descrizione: a['descrizione'] ?? '',
-              orario: _parseActivityTime(a['orario']),
-              luogo: a['luogo'],
-            );
-          }).toList();
+      DateTime parseGiorno(String giorno) {
+        try {
+          return DateTime.parse(giorno);
+        } catch (_) {
+          try {
+            return DateFormat('dd/MM/yyyy').parse(giorno);
+          } catch (_) {
+            return DateTime.now();
+          }
         }
-      });
+      }
 
-      nuovoViaggio.itinerario = itinerario;
+      DateTime parseOrario(String? timeString, DateTime giorno) {
+        try {
+          if (timeString == null || !timeString.contains(':')) {
+            return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
+          }
+          final parts = timeString.split(':');
+          return DateTime(
+            giorno.year,
+            giorno.month,
+            giorno.day,
+            int.parse(parts[0]),
+            int.parse(parts[1]),
+          );
+        } catch (e) {
+          return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
+        }
+      }
 
+      // Poi parsing JSON
+
+      final dataInizioViaggio = startDate!; // già definita
+
+      decoded.forEach((giornoChiave, attivitaList) {
+        if (attivitaList is List) {
+          // Estrai il numero da "giorno1", "giorno2", ecc.
+          final giornoIndex = int.tryParse(giornoChiave.replaceAll(RegExp(r'[^0-9]'), ''));
+          if (giornoIndex == null) {
+            print('⚠️ Chiave non valida: $giornoChiave');
+            return;
+          }
+
+        // Calcola la data vera (giorno 1 = dataInizio, giorno 2 = +1, ecc.)
+        final giornoData = dataInizioViaggio.add(Duration(days: giornoIndex - 1));
+        final keyGiorno = DateFormat('yyyy-MM-dd').format(giornoData);
+
+        print('📅 Mappo $giornoChiave → $keyGiorno');
+
+        itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
+          print('Parsing attività $giornoChiave → $a');
+          return Attivita(
+            id: const Uuid().v4(),
+            titolo: a['titolo'] ?? 'Attività',
+            descrizione: a['descrizione'] ?? '',
+            orario: parseOrario(a['orario'], giornoData),
+            luogo: a['luogo'] ?? '',
+          );
+        }).toList();
+      } else {
+        print('⚠️ Attività per $giornoChiave non è una lista: $attivitaList');
+      }
+    });
+
+      // Costruzione nuovo viaggio
+      final nuovoViaggio = Viaggio(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        titolo: destination.trim(),
+        destinazione: destination.trim(),
+        dataInizio: startDate!,
+        dataFine: endDate!,
+        budget: budget.trim(),
+        partecipanti: List.from(participants),
+        confermato: false,
+        spese: [],
+        archiviato: false,
+        note: null,
+        itinerario: itinerario,
+        interessi: List.from(interessiSelezionati),
+      );
+
+      // Salvataggio su Firestore e callback
       await FirestoreService().saveViaggio(nuovoViaggio);
       widget.onViaggioCreato(nuovoViaggio);
 

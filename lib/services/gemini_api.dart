@@ -1,11 +1,24 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class GeminiApi {
-  final String apiKey;
+  final GenerativeModel model;
 
-  GeminiApi(this.apiKey);
+  GeminiApi()
+      : model = GenerativeModel(
+          // Modifica qui - usa 'gemini-pro' invece di 'gemini-2.0'
+          model: 'gemini-2.0-flash',
+          apiKey: dotenv.env['GEMINI_API_KEY']!,
+          // Configurazioni aggiuntive consigliate
+          generationConfig: GenerationConfig(
+            temperature: 0,
+            maxOutputTokens: 2000,
+          ),
+          safetySettings: [
+            SafetySetting(HarmCategory.harassment, HarmBlockThreshold.none),
+          ],
+        );
 
   Future<String> generaItinerario({
     required String destinazione,
@@ -14,127 +27,66 @@ class GeminiApi {
     required String budget,
     required List<String> interessi,
   }) async {
-    // Validazione input
     if (dataFine.isBefore(dataInizio)) {
-      throw ArgumentError('La data finale non può essere precedente alla data iniziale');
+      throw ArgumentError('La data finale non può essere prima di quella iniziale');
     }
 
-    final giorniViaggio = dataFine.difference(dataInizio).inDays + 1;
+    final giorni = dataFine.difference(dataInizio).inDays + 1;
     final dateFormatter = DateFormat('dd/MM/yyyy');
 
-    final prompt = '''
-Genera un itinerario di viaggio in STRETTO FORMATO JSON per $destinazione.
-Periodo: ${dateFormatter.format(dataInizio)} - ${dateFormatter.format(dataFine)} ($giorniViaggio giorni)
+final prompt = '''
+Genera solo un oggetto JSON valido per questo viaggio. Non includere spiegazioni o testo aggiuntivo.
+
+Viaggio a: $destinazione
+Date: ${dateFormatter.format(dataInizio)} - ${dateFormatter.format(dataFine)} ($giorni giorni)
 Budget: $budget €
 Interessi: ${interessi.join(', ')}
 
-Formato richiesto ESATTO:
+Formato richiesto:
 {
   "giorno1": [
     {
       "titolo": "Colazione",
-      "descrizione": "...",
+      "descrizione": "Colazione tipica locale",
       "orario": "08:30",
-      "luogo": "...",
-      "durata": "1 ora",
-      "costo": "€10"
+      "luogo": "Centro città"
     },
     ...
-  ]
-}''';
+  ],
+  "giorno2": [...]
+}
 
-    try {
-      final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/text-bison-001:generateText?key=$apiKey',
-      );
+Regole:
+- Restituisci solo JSON puro
+- Evita caratteri speciali o virgolette non chiuse
+- Nessun testo prima o dopo
+- Non usare markdown
 
-      final headers = {
-        'Content-Type': 'application/json',
-      };
+''';
 
-      // Configurazione corretta per text-bison-001
-      final body = jsonEncode({
-        'prompt': {
-          'text': prompt
-        },
-        'temperature': 0.7,
-        'maxOutputTokens': 2000,
-        'topP': 0.9,
-        // Safety settings supportati da text-bison-001:
-        'safetySettings': [
-          {
-            'category': 'HARM_CATEGORY_DEROGATORY',
-            'threshold': 'BLOCK_LOW_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_TOXICITY',
-            'threshold': 'BLOCK_LOW_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_VIOLENCE',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_SEXUAL',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_MEDICAL',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          },
-          {
-            'category': 'HARM_CATEGORY_DANGEROUS',
-            'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-          }
-        ]
-      });
+try {
+  print("🚀 Invio prompt a Gemini...");
+  final response = await model.generateContent([
+    Content.text(prompt),
+  ]);
 
-      final response = await http.post(url, headers: headers, body: body);
+  final output = response.text;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final result = data['candidates']?[0]?['output'] ?? '';
-        
-        if (result.isEmpty) {
-          throw Exception('Nessun contenuto generato');
-        }
-        
-        return result;
-      } else {
-        throw _handleApiError(response);
-      }
-    } on http.ClientException catch (e) {
-      throw Exception('Errore di connessione: ${e.message}');
-    } on FormatException catch (e) {
-      throw Exception('Errore nel formato della risposta: $e');
-    } catch (e) {
-      throw Exception('Errore sconosciuto: $e');
-    }
+  if (output == null || output.trim().isEmpty) {
+    throw Exception('Gemini non ha generato nulla');
   }
 
-  Exception _handleApiError(http.Response response) {
-    final statusCode = response.statusCode;
-    try {
-      final errorBody = jsonDecode(response.body);
-      final errorMessage = errorBody['error']?['message'] ?? response.body;
-      return Exception('Errore API (${errorBody['error']?['code'] ?? statusCode}): $errorMessage');
-    } catch (_) {
-      return Exception('Errore API (${response.statusCode}): ${response.body}');
-    }
-  }
+  // ✅ Pulisce eventuali blocchi markdown
+  final cleanedOutput = output
+      .replaceAll('```json', '')
+      .replaceAll('```', '')
+      .trim();
 
-  Future<List<String>> listAvailableModels() async {
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
-    );
-    
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return (data['models'] as List)
-          .map((m) => m['name'] as String)
-          .toList();
-    }
-    throw Exception('Failed to fetch models: ${response.statusCode}');
+  print('✅ Risposta Gemini pulita:\n$cleanedOutput');
+  return cleanedOutput;
+} catch (e) {
+  print('❌ Errore durante la generazione: $e');
+  rethrow;
+}
   }
 }

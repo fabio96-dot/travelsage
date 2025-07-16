@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/viaggio.dart';
 import 'aggiungi_attivita_page.dart';
+import '../../services/firestore_service.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
 class GiornoItinerarioPage extends StatefulWidget {
   final DateTime giorno;
   final Viaggio viaggio;
+  
 
   const GiornoItinerarioPage({
     Key? key,
@@ -22,11 +24,14 @@ class _GiornoItinerarioPageState extends State<GiornoItinerarioPage> with Ticker
   late List<Attivita> listaAttivita;
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
+  
 
   @override
   void initState() {
     super.initState();
-    listaAttivita = List.from(widget.viaggio.attivitaDelGiorno(widget.giorno) ?? []);
+    listaAttivita = List.from(widget.viaggio.attivitaDelGiorno(
+      DateTime(widget.giorno.year, widget.giorno.month, widget.giorno.day),
+    ) ?? []);
 
     _controller = AnimationController(
       vsync: this,
@@ -45,6 +50,7 @@ class _GiornoItinerarioPageState extends State<GiornoItinerarioPage> with Ticker
     super.dispose();
   }
 
+  
 void _modificaAttivita(Attivita attivita, int index) async {
   final result = await Navigator.push(
     context,
@@ -61,6 +67,8 @@ void _modificaAttivita(Attivita attivita, int index) async {
     setState(() {
       widget.viaggio.modificaAttivita(widget.giorno, attivita.id, result);
     });
+
+    await FirestoreService().saveViaggio(widget.viaggio); // 👈 salva su Firestore
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -99,6 +107,8 @@ void _eliminaAttivita(int index) async {
       widget.viaggio.rimuoviAttivita(widget.giorno, attivitaDaEliminare.id);
     });
 
+    await FirestoreService().saveViaggio(widget.viaggio); // 👈 salva su Firestore
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("Attività eliminata con successo!"),
@@ -113,8 +123,13 @@ void _eliminaAttivita(int index) async {
   @override
   Widget build(BuildContext context) {
     final data = DateFormat('EEEE d MMMM yyyy', 'it_IT').format(widget.giorno);
-    final attivita = List<Attivita>.from(widget.viaggio.attivitaDelGiorno(widget.giorno) ?? [])
-    ..sort((a, b) => a.orario.compareTo(b.orario));
+    final attivita = List<Attivita>.from(widget.viaggio.attivitaDelGiorno(widget.giorno) ?? []);
+    print('Attività per giorno ${widget.giorno}: ${attivita.length}');
+    for (var a in attivita) {
+      print(' - ${a.titolo} alle ${a.orario}');
+    }
+    attivita.sort((a, b) => a.orario.compareTo(b.orario));
+
 
     return Scaffold(
       appBar: AppBar(
@@ -167,6 +182,8 @@ void _eliminaAttivita(int index) async {
             setState(() {
               widget.viaggio.aggiungiAttivita(widget.giorno, nuova);
             });
+
+            await FirestoreService().saveViaggio(widget.viaggio); // 👈 salva su Firestore
 
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

@@ -126,13 +126,14 @@ class Viaggio {
   void rimuoviAttivita(DateTime giorno, String attivitaId) {
   final key = _formatDayKey(giorno);
   itinerario[key]?.removeWhere((a) => a.id == attivitaId);
-  if (itinerario[key]?.isEmpty ?? false) {
+    if (itinerario[key]?.isEmpty ?? false) {
     itinerario.remove(key);
+    }
   }
-}
 
   List<Attivita>? attivitaDelGiorno(DateTime giorno) {
-    return itinerario[_formatDayKey(giorno)];
+    final key = _formatDayKey(DateTime(giorno.year, giorno.month, giorno.day));
+    return itinerario[key];
   }
 
   String _formatDayKey(DateTime giorno) {
