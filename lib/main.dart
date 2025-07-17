@@ -324,17 +324,16 @@ class _MainNavigationState extends State<MainNavigation> {
         selectedItemColor: Colors.indigo,
         onTap: _onItemTapped,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high), label: 'Organizza'),
-          BottomNavigationBarItem(icon: Icon(Icons.card_travel), label: 'Viaggi'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Diario'), // nuova voce
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Impostazioni'),
+          BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high), label: 'Travelbuilder'),
+          BottomNavigationBarItem(icon: Icon(Icons.card_travel), label: 'Mytravels'),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Journal'), // nuova voce
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
         type: BottomNavigationBarType.fixed, // per più di 3 elementi
       ),
     );
   }
 }
-
 
 class OrganizeTripPage extends StatefulWidget {
   final Function(Viaggio) onViaggioCreato;
@@ -352,6 +351,7 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
   DateTime? endDate;
   String budget = '';
   List<String> participants = [];
+  bool usaIA = true;
   List<String> interessiDisponibili = [
     'Cultura', 'Natura', 'Relax', 'Cibo', 'Sport', 'Storia', 'Arte',
   ];
@@ -393,148 +393,162 @@ Future<void> _submit() async {
       endDate != null &&
       participants.isNotEmpty) {
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Generazione itinerario...')),
-      );
+      if (usaIA) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generazione itinerario...')),
+        );
 
-      final gemini = GeminiApi();
+        final gemini = GeminiApi();
+        final rawResponse = await gemini.generaItinerario(
+          destinazione: destination.trim(),
+          dataInizio: startDate!,
+          dataFine: endDate!,
+          budget: budget.trim(),
+          interessi: List.from(interessiSelezionati),
+        );
 
-      // Chiamata Gemini
-      final rawResponse = await gemini.generaItinerario(
-        destinazione: destination.trim(),
-        dataInizio: startDate!,
-        dataFine: endDate!,
-        budget: budget.trim(),
-        interessi: List.from(interessiSelezionati),
-      );
+        print('🔍 Risposta raw Gemini:\n$rawResponse');
 
-      print('🔍 Risposta raw Gemini:\n$rawResponse');
-
-      // Funzione per estrarre JSON da testo misto
-      String estraiJson(String text) {
-        final start = text.indexOf('{');
-        final end = text.lastIndexOf('}');
-        if (start != -1 && end != -1 && end > start) {
-          return text.substring(start, end + 1);
-        }
-        throw FormatException('JSON non trovato nella risposta');
-      }
-
-      late final String jsonString;
-
-      try {
-        jsonString = estraiJson(rawResponse);
-      } catch (e) {
-        print('❌ Errore estrazione JSON: $e');
-        throw Exception('Risposta Gemini non contiene JSON valido');
-      }
-
-      print('🔍 JSON estratto:\n$jsonString');
-
-      // Decodifica JSON
-      final Map<String, dynamic> decoded = jsonDecode(jsonString);
-      final Map<String, List<Attivita>> itinerario = {};
-
-      DateTime parseGiorno(String giorno) {
-        try {
-          return DateTime.parse(giorno);
-        } catch (_) {
-          try {
-            return DateFormat('dd/MM/yyyy').parse(giorno);
-          } catch (_) {
-            return DateTime.now();
+        String estraiJson(String text) {
+          final start = text.indexOf('{');
+          final end = text.lastIndexOf('}');
+          if (start != -1 && end != -1 && end > start) {
+            return text.substring(start, end + 1);
           }
+          throw FormatException('JSON non trovato nella risposta');
         }
-      }
 
-      DateTime parseOrario(String? timeString, DateTime giorno) {
+        late final String jsonString;
+
         try {
-          if (timeString == null || !timeString.contains(':')) {
+          jsonString = estraiJson(rawResponse);
+        } catch (e) {
+          print('❌ Errore estrazione JSON: $e');
+          throw Exception('Risposta Gemini non contiene JSON valido');
+        }
+
+        print('🔍 JSON estratto:\n$jsonString');
+
+        final Map<String, dynamic> decoded = jsonDecode(jsonString);
+        final Map<String, List<Attivita>> itinerario = {};
+
+        DateTime parseOrario(String? timeString, DateTime giorno) {
+          try {
+            if (timeString == null || !timeString.contains(':')) {
+              return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
+            }
+            final parts = timeString.split(':');
+            return DateTime(
+              giorno.year,
+              giorno.month,
+              giorno.day,
+              int.parse(parts[0]),
+              int.parse(parts[1]),
+            );
+          } catch (e) {
+            print('❗️Errore parsing orario: $e, input: $timeString');
             return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
           }
-          final parts = timeString.split(':');
-          return DateTime(
-            giorno.year,
-            giorno.month,
-            giorno.day,
-            int.parse(parts[0]),
-            int.parse(parts[1]),
-          );
-        } catch (e) {
-          return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
         }
-      }
 
-      // Poi parsing JSON
+        final giorniTotali = endDate!.difference(startDate!).inDays + 1;
+        final dateList = List.generate(giorniTotali,
+          (i) => startDate!.add(Duration(days: i)));
 
-      final dataInizioViaggio = startDate!; // già definita
+        int index = 0;
+        decoded.forEach((key, attivitaList) {
+          final giorno = index < dateList.length
+              ? dateList[index]
+              : dateList.last;
+          final keyGiorno = DateFormat('yyyy-MM-dd').format(giorno);
 
-      decoded.forEach((giornoChiave, attivitaList) {
-        if (attivitaList is List) {
-          // Estrai il numero da "giorno1", "giorno2", ecc.
-          final giornoIndex = int.tryParse(giornoChiave.replaceAll(RegExp(r'[^0-9]'), ''));
-          if (giornoIndex == null) {
-            print('⚠️ Chiave non valida: $giornoChiave');
-            return;
+          if (attivitaList is List) {
+            itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
+              return Attivita(
+                id: const Uuid().v4(),
+                titolo: a['titolo'] ?? 'Attività',
+                descrizione: a['descrizione'] ?? '',
+                orario: parseOrario(a['orario'], giorno),
+                luogo: a['luogo'] ?? '',
+                completata: false,
+                categoria: a['categoria'] ?? 'attività',
+                costoStimato: (a['costoStimato'] is num)
+                    ? (a['costoStimato'] as num).toDouble()
+                    : 0.0,
+                generataDaIA: true
+              );
+            }).toList();
           }
 
-        // Calcola la data vera (giorno 1 = dataInizio, giorno 2 = +1, ecc.)
-        final giornoData = dataInizioViaggio.add(Duration(days: giornoIndex - 1));
-        final keyGiorno = DateFormat('yyyy-MM-dd').format(giornoData);
+          index++;
+        });
 
-        print('📅 Mappo $giornoChiave → $keyGiorno');
+        final nuovoViaggio = Viaggio(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          titolo: destination.trim(),
+          destinazione: destination.trim(),
+          dataInizio: startDate!,
+          dataFine: endDate!,
+          budget: budget.trim(),
+          partecipanti: List.from(participants),
+          confermato: false,
+          spese: [],
+          archiviato: false,
+          note: null,
+          itinerario: itinerario,
+          interessi: List.from(interessiSelezionati),
+        );
 
-        itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
-          print('Parsing attività $giornoChiave → $a');
-          return Attivita(
-            id: const Uuid().v4(),
-            titolo: a['titolo'] ?? 'Attività',
-            descrizione: a['descrizione'] ?? '',
-            orario: parseOrario(a['orario'], giornoData),
-            luogo: a['luogo'] ?? '',
-          );
-        }).toList();
+        await FirestoreService().saveViaggio(nuovoViaggio);
+        widget.onViaggioCreato(nuovoViaggio);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Viaggio creato con successo')),
+        );
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+          ),
+        );
       } else {
-        print('⚠️ Attività per $giornoChiave non è una lista: $attivitaList');
+        // 🎯 IA disattivata: viaggio vuoto
+        final nuovoViaggio = Viaggio(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          titolo: destination.trim(),
+          destinazione: destination.trim(),
+          dataInizio: startDate!,
+          dataFine: endDate!,
+          budget: budget.trim(),
+          partecipanti: List.from(participants),
+          confermato: false,
+          spese: [],
+          archiviato: false,
+          note: null,
+          itinerario: {}, // <-- niente attività
+          interessi: List.from(interessiSelezionati),
+        );
+
+        await FirestoreService().saveViaggio(nuovoViaggio);
+        widget.onViaggioCreato(nuovoViaggio);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Viaggio creato (manuale)')),
+        );
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+          ),
+        );
       }
-    });
-
-      // Costruzione nuovo viaggio
-      final nuovoViaggio = Viaggio(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        titolo: destination.trim(),
-        destinazione: destination.trim(),
-        dataInizio: startDate!,
-        dataFine: endDate!,
-        budget: budget.trim(),
-        partecipanti: List.from(participants),
-        confermato: false,
-        spese: [],
-        archiviato: false,
-        note: null,
-        itinerario: itinerario,
-        interessi: List.from(interessiSelezionati),
-      );
-
-      // Salvataggio su Firestore e callback
-      await FirestoreService().saveViaggio(nuovoViaggio);
-      widget.onViaggioCreato(nuovoViaggio);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Viaggio creato con successo')),
-      );
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
-        ),
-      );
     } catch (e, stackTrace) {
       print('❌ Errore generazione viaggio: $e');
       print(stackTrace);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore nella generazione del viaggio: $e')),
+        SnackBar(content: Text('Errore nella creazione del viaggio: $e')),
       );
     }
   } else {
@@ -543,7 +557,6 @@ Future<void> _submit() async {
     );
   }
 }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -667,6 +680,24 @@ Future<void> _submit() async {
                   )
                 ],
               ),
+
+              // Campo toggle IA
+              const SizedBox(height: 32),
+              SwitchListTile(
+                title: Row(
+                  children: const [
+                    Icon(Icons.smart_toy, size: 20, color: Colors.deepPurple),
+                    SizedBox(width: 8),
+                    Text("Sfrutta l'assistente IA"),
+                  ],
+                ),
+                subtitle: const Text("Genera automaticamente un itinerario personalizzato"),
+                value: usaIA,
+                onChanged: (val) {
+                  setState(() => usaIA = val);
+                },
+              ),
+
               const SizedBox(height: 32),
               Text('Interessi del viaggio', style: theme.textTheme.titleMedium),
               const SizedBox(height: 12),
@@ -753,6 +784,16 @@ class _TripsPageState extends State<TripsPage> {
         SnackBar(content: Text('Errore caricamento viaggi: $e')),
       );
     }
+  }
+
+  double calcolaTotaleStimato(Map<String, List<Attivita>> itinerario) {
+  double totale = 0.0;
+    for (var attList in itinerario.values) {
+      for (var att in attList) {
+        totale += att.costoStimato ?? 0.0;
+      }
+    }
+    return totale;
   }
 
   void _archiviaViaggiScaduti() {
@@ -864,7 +905,8 @@ class _TripsPageState extends State<TripsPage> {
 
   Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
     final screenWidth = MediaQuery.of(context).size.width;
-
+    final theme = Theme.of(context);
+    
     int cardsPerRow;
     double cardHeight;
 
@@ -899,6 +941,9 @@ class _TripsPageState extends State<TripsPage> {
           final titoloDaMostrare = viaggio.titolo.isNotEmpty
               ? viaggio.titolo
               : 'Viaggio a ${viaggio.destinazione}';
+          final totale = calcolaTotaleStimato(viaggio.itinerario);
+          final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
+          final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
 
           return InkWell(
             key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
@@ -1000,6 +1045,32 @@ class _TripsPageState extends State<TripsPage> {
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.white70,
                           ),
+                    ),
+                    Tooltip(
+                      message: haSuperatoBudget
+                          ? "Hai sforato il budget previsto"
+                          : "Spesa stimata entro il budget",
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      textStyle: TextStyle(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.euro, size: 18, color: Colors.white70),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Preventivo: €${totale.toStringAsFixed(2)}",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: colorePreventivo,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Row(

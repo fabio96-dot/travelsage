@@ -46,15 +46,40 @@ Formato richiesto:
 {
   "giorno1": [
     {
-      "titolo": "Colazione",
-      "descrizione": "Colazione tipica locale",
-      "orario": "08:30",
-      "luogo": "Centro città"
+      "titolo": "Check-in hotel",
+      "descrizione": "Arrivo e sistemazione in hotel 3 stelle.",
+      "orario": "15:00",
+      "luogo": "Hotel Centrale",
+      "categoria": "pernottamento",
+      "costoStimato": 80.0
     },
     ...
   ],
-  "giorno2": [...]
+  "giorno2": [
+    {
+      "titolo": "Passeggiata in centro",
+      "descrizione": "Passeggiata rilassante nel centro storico.",
+      "orario": "17:00",
+      "luogo": "Centro città",
+      "categoria": "attività",
+      "costoStimato": 0.0
+    },
+    ...
+  ],
+  "giorno3": [
+    {
+      "titolo": "volo",
+      "descrizione": "volo di ritorno",
+      "orario": "20:00",
+      "luogo": "aeroporto",
+      "categoria": "trasporto",
+      "costoStimato": 320.0
+    }
+    ...
+  ]
 }
+
+Il totale dei costi stimati deve essere allineato al budget indicato.
 
 Regole:
 - Restituisci solo JSON puro

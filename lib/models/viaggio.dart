@@ -200,6 +200,9 @@ class Attivita {
   DateTime orario;
   String? luogo;
   bool completata;
+  bool generataDaIA; // <-- ✅ nuovo campo
+  String categoria; // attività, trasporto, pernottamento
+  final double? costoStimato;
 
   Attivita({
     required this.id,
@@ -208,6 +211,9 @@ class Attivita {
     required this.orario,
     this.luogo,
     this.completata = false,
+    this.generataDaIA = false, // <-- default false
+    this.categoria = 'attivita', // default
+    this.costoStimato = 0.0,
   });
 
   factory Attivita.fromJson(Map<String, dynamic> json) {
@@ -218,6 +224,9 @@ class Attivita {
       orario: DateTime.parse(json['orario']),
       luogo: json['luogo'],
       completata: json['completata'] ?? false,
+      generataDaIA: json['generataDaIA'] ?? false, // <-- leggi da JSON
+      categoria: json['categoria'] ?? 'attivita',
+      costoStimato: (json['costoStimato'] ?? 0).toDouble(),
     );
   }
 
@@ -229,6 +238,31 @@ class Attivita {
       'orario': orario.toIso8601String(),
       'luogo': luogo,
       'completata': completata,
+      'generataDaIA': generataDaIA, // <-- salva su Firestore
+      'categoria': categoria,
+      'costoStimato': costoStimato,
     };
+  }
+    Attivita copyWith({
+    String? titolo,
+    String? descrizione,
+    DateTime? orario,
+    String? luogo,
+    bool? completata,
+    bool? generataDaIA,
+    String? categoria,
+    double? costoStimato,
+    }) {
+    return Attivita(
+      id: id,
+      titolo: titolo ?? this.titolo,
+      descrizione: descrizione ?? this.descrizione,
+      orario: orario ?? this.orario,
+      luogo: luogo ?? this.luogo,
+      completata: completata ?? this.completata,
+      generataDaIA: generataDaIA ?? this.generataDaIA,
+      categoria: categoria ?? this.categoria,
+      costoStimato: costoStimato ?? this.costoStimato,
+    );
   }
 }
