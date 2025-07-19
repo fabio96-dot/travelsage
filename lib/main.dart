@@ -710,6 +710,17 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     _tabController = TabController(length: 2, vsync: this);
   }
 
+  double responsiveIconSize(double screenWidth) {
+    if (screenWidth < 400) return 24;
+    if (screenWidth < 600) return 28;
+    return 32;
+  }
+
+  double responsiveChipFont(double screenWidth) {
+    if (screenWidth < 400) return 12;
+    return 14;
+  }
+
   Future<void> _selectDate(bool isStart) async {
     final picked = await showDatePicker(
       context: context,
@@ -931,41 +942,35 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Organizza Viaggio'),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Theme.of(context).colorScheme.primary,
-          labelColor: Theme.of(context).colorScheme.primary,
+          indicatorColor: theme.colorScheme.primary,
+          labelColor: theme.colorScheme.primary,
           unselectedLabelColor: Colors.grey,
-          tabs: [  // Rimuovi 'const' qui
-            Tab(
-              icon: FaIcon(
-                FontAwesomeIcons.rocket,
-                color: Theme.of(context).colorScheme.primary,  // Corretto: Theme con T maiuscolo
-              ),
-            ),
-          Tab(
-            icon: FaIcon(
-              FontAwesomeIcons.userAstronaut,
-              color: Theme.of(context).colorScheme.primary,  // Aggiungi colore anche qui per consistenza
-            ),
-          ),
-        ],
-      )
+          tabs: const [
+            Tab(icon: FaIcon(FontAwesomeIcons.rocket)),
+            Tab(icon: FaIcon(FontAwesomeIcons.userAstronaut)),
+          ],
+        ),
       ),
       body: Stack(
         children: [
-          Form(
-            key: _formKey,
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildViaggioTab(theme),
-                _buildViaggiatoreTab(theme),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: 80),
+            child: Form(
+              key: _formKey,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildViaggioTab(theme, screenWidth),
+                  _buildViaggiatoreTab(theme, screenWidth),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -973,9 +978,7 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
             right: 16,
             bottom: 16,
             child: ElevatedButton.icon(
-              onPressed: () {
-                _submit();
-              },
+              onPressed: _submit,
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Organizza Viaggio', style: TextStyle(fontSize: 18)),
               style: ElevatedButton.styleFrom(
@@ -990,141 +993,146 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     );
   }
 
-  Widget _buildViaggioTab(ThemeData theme) {
-    return SingleChildScrollView(
+  Widget _buildViaggioTab(ThemeData theme, double screenWidth) {
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _buildTextField('Partenza', Icons.flight_takeoff, (val) => departure = val),
-          const SizedBox(height: 16),
-          _buildTextField('Destinazione', Icons.location_on_outlined, (val) => destination = val),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _buildDatePicker('Data Inizio', true, startDate)),
-              const SizedBox(width: 16),
-              Expanded(child: _buildDatePicker('Data Fine', false, endDate)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildTextField('Budget per persona (€)', Icons.euro_outlined, (val) => budget = val,
-              isNumeric: true),
-          const SizedBox(height: 16),
-          
-          const SizedBox(height: 16),
-          Text('Mezzo di trasporto', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 16,
-            children: mezziTrasporto.map((mezzo) {
-              final nome = mezzo['nome'] as String;
-              final icona = mezzo['icona'] as IconData;
-              final selezionato = mezzoTrasporto == nome;
-
-              return Tooltip(
-                message: nome,
-                child: GestureDetector(
-                  onTap: () => setState(() => mezzoTrasporto = nome),
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: selezionato ? Colors.indigo : Colors.grey[300],
-                    child: Icon(
-                      icona,
-                      size: 28,
-                      color: selezionato ? Colors.white : Colors.black54,
-                    ),
+      children: [
+        _buildTextField('Partenza', Icons.flight_takeoff, (val) => departure = val),
+        const SizedBox(height: 16),
+        _buildTextField('Destinazione', Icons.location_on_outlined, (val) => destination = val),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: _buildDatePicker('Data Inizio', true, startDate)),
+            const SizedBox(width: 16),
+            Expanded(child: _buildDatePicker('Data Fine', false, endDate)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildTextField('Budget per persona (€)', Icons.euro_outlined, (val) => budget = val,
+            isNumeric: true),
+        const SizedBox(height: 24),
+        Text('Mezzo di trasporto', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.start,
+          spacing: 16,
+          runSpacing: 12,
+          children: mezziTrasporto.map((mezzo) {
+            final nome = mezzo['nome'] as String;
+            final icona = mezzo['icona'] as IconData;
+            final selezionato = mezzoTrasporto == nome;
+            return Tooltip(
+              message: nome,
+              child: GestureDetector(
+                onTap: () => setState(() => mezzoTrasporto = nome),
+                child: CircleAvatar(
+                  radius: screenWidth < 400 ? 22 : 28,
+                  backgroundColor: selezionato ? Colors.indigo : Colors.grey[300],
+                  child: Icon(
+                    icona,
+                    size: screenWidth < 400 ? 20 : 28,
+                    color: selezionato ? Colors.white : Colors.black54,
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-
-            _buildSlider('Attività giornaliere', attivitaGiornaliere.toDouble(), 1, 8, (val) {
-              setState(() => attivitaGiornaliere = val.round());
-            }),
-            const SizedBox(height: 8),
-            _buildSlider('Raggio massimo (km)', raggioKm, 0, 500, (val) {
-              setState(() => raggioKm = val);
-            }, step: 15),
-            const SizedBox(height: 16),
-            SwitchListTile(
-              title: Row(
-                children: const [
-                  Text("Sfrutta l'assistente IA per generare l'itinerario"),
-                  SizedBox(width: 8),
-                  Icon(Icons.smart_toy_sharp, color: Colors.indigo),
-                ],
               ),
-              value: usaIA,
-              onChanged: (val) => setState(() => usaIA = val),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 24),
+        _buildSlider('Attività giornaliere', attivitaGiornaliere.toDouble(), 1, 8,
+            (val) => setState(() => attivitaGiornaliere = val.round())),
+        const SizedBox(height: 8),
+        _buildSlider('Raggio massimo (km)', raggioKm, 0, 500,
+            (val) => setState(() => raggioKm = val), step: 15),
+        const SizedBox(height: 16),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Sfrutta l'assistente IA per generare l'itinerario",
+                style: theme.textTheme.bodyLarge,
+                softWrap: true,
+                overflow: TextOverflow.visible,
+              ),
+              const SizedBox(height: 4),
+              const Icon(Icons.smart_toy_sharp, color: Colors.indigo),
+            ],
+          ),
+          value: usaIA,
+          onChanged: (val) => setState(() => usaIA = val),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViaggiatoreTab(ThemeData theme, double screenWidth) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSlider('Età media', etaMedia, 10, 100, (val) => setState(() => etaMedia = val)),
+        const SizedBox(height: 32),
+        Text('Tipologia Viaggiatore', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildViaggiatoreIcon(Icons.backpack, 'Backpacker', screenWidth),
+            _buildViaggiatoreIcon(RemixIcons.diamond_fill, 'Luxury', screenWidth),
+            _buildViaggiatoreIcon(Icons.family_restroom, 'Family', screenWidth),
+            _buildViaggiatoreIcon(RemixIcons.computer_fill, 'Digital Nomad', screenWidth),
+            _buildViaggiatoreIcon(RemixIcons.car_fill, 'Road Tripper', screenWidth),
+          ],
+        ),
+        const SizedBox(height: 32),
+        Text('Interessi', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: interessiDisponibili.map((interesse) => FilterChip(
+            label: Text(
+              interesse,
+              style: TextStyle(fontSize: responsiveChipFont(screenWidth)),
+            ),
+            selected: interessiSelezionati.contains(interesse),
+            onSelected: (selected) => setState(() {
+              if (selected) {
+                interessiSelezionati.add(interesse);
+              } else {
+                interessiSelezionati.remove(interesse);
+              }
+            }),
+          )).toList(),
+        ),
+        const SizedBox(height: 32),
+        Text('Partecipanti', style: theme.textTheme.titleMedium),
+        Wrap(
+          spacing: 8,
+          children: participants.map((p) => Chip(
+            label: Text(p),
+            onDeleted: () => setState(() => participants.remove(p)),
+          )).toList(),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _participantController,
+                decoration: const InputDecoration(labelText: 'Aggiungi partecipante'),
+                onSubmitted: (val) => _addParticipant(val),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => _addParticipant(_participantController.text),
             ),
           ],
         ),
-      );
-  }
-
-  Widget _buildViaggiatoreTab(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSlider('Età media', etaMedia, 10, 100, (val) => setState(() => etaMedia = val)),
-          const SizedBox(height: 32),
-          Text('Tipologia Viaggiatore', style: theme.textTheme.titleMedium),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildViaggiatoreIcon(Icons.backpack, 'Backpacker'),
-              _buildViaggiatoreIcon(RemixIcons.diamond_fill, 'Luxury'),
-              _buildViaggiatoreIcon(Icons.family_restroom, 'Family'),
-              _buildViaggiatoreIcon(RemixIcons.computer_fill, 'Digital Nomad'),
-              _buildViaggiatoreIcon(RemixIcons.car_fill, 'Road Tripper'),
-            ],
-          ),
-          const SizedBox(height: 32),
-          Text('Interessi', style: theme.textTheme.titleMedium),
-          Wrap(
-            spacing: 8,
-            children: interessiDisponibili.map((interesse) => FilterChip(
-              label: Text(interesse),
-              selected: interessiSelezionati.contains(interesse),
-              onSelected: (selected) => setState(() {
-                if (selected) {
-                  interessiSelezionati.add(interesse);
-                } else {
-                  interessiSelezionati.remove(interesse);
-                }
-              }),
-            )).toList(),
-          ),
-          const SizedBox(height: 32),
-          Text('Partecipanti', style: theme.textTheme.titleMedium),
-          Wrap(
-            spacing: 8,
-            children: participants.map((p) => Chip(
-              label: Text(p),
-              onDeleted: () => setState(() => participants.remove(p)),
-            )).toList(),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _participantController,
-                  decoration: const InputDecoration(labelText: 'Aggiungi partecipante'),
-                  onSubmitted: (val) => _addParticipant(val),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: () => _addParticipant(_participantController.text),
-              ),
-            ],
-          ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1159,9 +1167,10 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     );
   }
 
-  Widget _buildSlider(String label, double value, double min, double max, Function(double) onChanged, {int? step}) {
+  Widget _buildSlider(String label, double value, double min, double max,
+      Function(double) onChanged,
+      {int? step}) {
     final divisions = step != null ? ((max - min) / step).round() : null;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1178,27 +1187,30 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     );
   }
 
-  Widget _buildViaggiatoreIcon(IconData icon, String tipo) {
-  final bool selected = tipologiaViaggiatore == tipo;
-
-  return Tooltip(
-    message: tipo,
-    child: GestureDetector(
-      onTap: () => setState(() => tipologiaViaggiatore = tipo),
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: selected ? Colors.indigo : Colors.grey[300],
-          boxShadow: selected
-              ? [BoxShadow(color: Colors.indigo.withOpacity(0.5), blurRadius: 8)]
-              : [],
+  Widget _buildViaggiatoreIcon(IconData icon, String tipo, double screenWidth) {
+    final bool selected = tipologiaViaggiatore == tipo;
+    return Tooltip(
+      message: tipo,
+      child: GestureDetector(
+        onTap: () => setState(() => tipologiaViaggiatore = tipo),
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? Colors.indigo : Colors.grey[300],
+            boxShadow: selected
+                ? [BoxShadow(color: Colors.indigo.withOpacity(0.5), blurRadius: 8)]
+                : [],
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Icon(
+            icon,
+            color: selected ? Colors.white : Colors.black54,
+            size: responsiveIconSize(screenWidth),
+          ),
         ),
-        padding: const EdgeInsets.all(16),
-        child: Icon(icon, color: selected ? Colors.white : Colors.black54, size: 28),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _addParticipant(String name) {
     if (name.trim().isNotEmpty) {
