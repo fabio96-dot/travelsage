@@ -61,6 +61,8 @@ flutter:
     - assets/logo_travelsage.png
     - assets/Travelsage.png
     - assets/animations/splash_travel.json
+    - assets/animations/travel_ai.json
+    - assets/animations/travelsuccess.json
     - .env  # Aggiunto il file .env agli assets
 
 flutter_launcher_icons:

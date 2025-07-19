@@ -29,6 +29,7 @@ import 'package:travel_sage/services/firestore_service.dart';
 import 'dart:async';
 import 'package:travel_sage/services/gemini_api.dart';
 import 'dart:convert';
+import 'pages/viaggiocreatoAI.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -671,6 +672,45 @@ class OrganizeTripPage extends StatefulWidget {
   State<OrganizeTripPage> createState() => _OrganizeTripPageState();
 }
 
+class _GenerazioneDialog extends StatelessWidget {
+  const _GenerazioneDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/animations/travel_ai.json',
+              width: 150,
+              repeat: true,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Sto creando il tuo viaggio su misura...',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Grazie alla potenza dell’intelligenza artificiale!',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 20),
+            const CircularProgressIndicator(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   String destination = '';
@@ -701,6 +741,9 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   {'nome': 'Camper', 'icona': RemixIcons.bus_2_fill},
   {'nome': 'Treno', 'icona': RemixIcons.train_fill},];
   final TextEditingController _participantController = TextEditingController();
+  final TextEditingController _departureController = TextEditingController();
+  final TextEditingController _destinationController = TextEditingController();
+  final TextEditingController _budgetController = TextEditingController();
 
   late final TabController _tabController;
 
@@ -708,7 +751,21 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _departureController.text = departure;
+    _destinationController.text = destination;
+    _budgetController.text = budget;
   }
+
+  @override
+  void dispose() {
+    _departureController.dispose();
+    _destinationController.dispose();
+    _budgetController.dispose();
+    _participantController.dispose();
+    _tabController.dispose();
+    super.dispose();
+  }
+
 
   double responsiveIconSize(double screenWidth) {
     if (screenWidth < 400) return 24;
@@ -757,8 +814,14 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
         participants.isNotEmpty) {
       try {
         if (usaIA) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Generazione itinerario...')),
+          late BuildContext dialogContext;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext ctx) {
+              dialogContext = ctx;
+              return const _GenerazioneDialog();
+            },
           );
 
           final gemini = GeminiApi();
@@ -852,11 +915,15 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
             index++;
           });
 
+          final destinazioneFinale = destination.trim().isNotEmpty
+          ? destination.trim()
+          : 'Viaggio';
+
           final nuovoViaggio = Viaggio(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             titolo: destination.trim(),
             partenza: departure.trim(),
-            destinazione: destination.trim(),
+            destinazione: destinazioneFinale,
             dataInizio: startDate!,
             dataFine: endDate!,
             budget: budget.trim(),
@@ -876,15 +943,14 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
 
           await FirestoreService().saveViaggio(nuovoViaggio);
           widget.onViaggioCreato(nuovoViaggio);
+          await Future.delayed(const Duration(seconds: 1));
+          Navigator.of(dialogContext).pop(); // Chiude il dialog Lottie
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Viaggio creato con successo')),
-          );
-
-          Navigator.push(
+          // Dopo la transizione, porti l’utente ai dettagli viaggio
+          Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+              builder: (_) => ViaggioCreatoPage(viaggio: nuovoViaggio),
             ),
           );
         } else {
@@ -938,7 +1004,7 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
       );
     }
   }
-
+  
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -997,9 +1063,9 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildTextField('Partenza', Icons.flight_takeoff, (val) => departure = val),
+        _buildTextField('Partenza', Icons.flight_takeoff, _departureController, onChanged: (val) => setState(() => departure = val)),
         const SizedBox(height: 16),
-        _buildTextField('Destinazione', Icons.location_on_outlined, (val) => destination = val),
+        _buildTextField('Destinazione', Icons.location_on_outlined, _destinationController,onChanged: (val) => setState(() => destination = val)),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -1009,8 +1075,7 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
           ],
         ),
         const SizedBox(height: 16),
-        _buildTextField('Budget per persona (€)', Icons.euro_outlined, (val) => budget = val,
-            isNumeric: true),
+        _buildTextField('Budget per persona (€)', Icons.euro_outlined, _budgetController, isNumeric: true, onChanged: (val) => setState(() => budget = val)),
         const SizedBox(height: 24),
         Text('Mezzo di trasporto', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -1136,19 +1201,20 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     );
   }
 
-  Widget _buildTextField(String label, IconData icon, Function(String) onChanged,
-      {bool isNumeric = false}) {
-    return TextFormField(
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      keyboardType: isNumeric ? TextInputType.number : null,
-      onChanged: onChanged,
-      validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
-    );
-  }
+Widget _buildTextField(String label, IconData icon, TextEditingController controller,
+    {bool isNumeric = false, void Function(String)? onChanged}) {
+  return TextFormField(
+    controller: controller,
+    decoration: InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    keyboardType: isNumeric ? TextInputType.number : null,
+    validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
+    onChanged: onChanged,
+  );
+}
 
   Widget _buildDatePicker(String label, bool isStart, DateTime? selectedDate) {
     return InkWell(
@@ -1221,7 +1287,6 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     }
   }
 }
-
 
 class TripsPage extends StatefulWidget {
   final VoidCallback onAddNewTrip;
@@ -1414,9 +1479,11 @@ class _TripsPageState extends State<TripsPage> {
           final viaggio = viaggiNonArchiviati[index];
           final originalIndex = viaggiBozza.indexOf(viaggio);
           final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
-          final titoloDaMostrare = viaggio.titolo.isNotEmpty
-              ? viaggio.titolo
-              : 'Viaggio a ${viaggio.destinazione}';
+          final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
+              ? viaggio.titolo.trim()
+              : viaggio.destinazione.trim().isNotEmpty
+                  ? viaggio.destinazione.trim()
+              : 'Senza Titolo');
           final totale = calcolaTotaleStimato(viaggio.itinerario);
           final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
           final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
