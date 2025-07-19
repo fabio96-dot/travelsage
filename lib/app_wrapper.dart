@@ -6,13 +6,18 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'firebase_options.dart'; // aggiorna percorso se serve
 import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
 import 'pages/theme_provider.dart';
+import 'firebase_options.dart';
 import 'main.dart'; // per SplashScreen e TravelSageApp
 
 class AppWrapper extends StatefulWidget {
-  const AppWrapper({Key? key}) : super(key: key);
+  final bool enableFirebase;
+  
+  const AppWrapper({
+    Key? key,
+    this.enableFirebase = true,
+  }) : super(key: key);
 
   @override
   State<AppWrapper> createState() => _AppWrapperState();
@@ -20,9 +25,8 @@ class AppWrapper extends StatefulWidget {
 
 class _AppWrapperState extends State<AppWrapper> {
   late Future<void> _initialization;
-
-  int _firebaseInitAttempts = 0;
-  static const int maxFirebaseInitAttempts = 3;
+  bool _initializationError = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -31,124 +35,169 @@ class _AppWrapperState extends State<AppWrapper> {
   }
 
   Future<void> _initializeApp() async {
-    // Inizializza date formatting
-    await initializeDateFormatting('it_IT', null);
+    try {
+      // 1. Caricamento configurazioni base
+      await _loadEssentialConfigurations();
 
-    // Aspetta config web se necessario
-    await WebConfig.waitForConfig();
-
-    // Prova a inizializzare Firebase con retry
-    while (_firebaseInitAttempts < maxFirebaseInitAttempts) {
-      try {
-        if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp(
-            options: kIsWeb ? WebConfig.firebaseOptions : DefaultFirebaseOptions.currentPlatform,
-          );
-        }
-
-        if (!kIsWeb) {
-          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-          FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
-        }
-
-        // Se arriviamo qui, Firebase inizializzato correttamente
-        return;
-      } catch (e) {
-        _firebaseInitAttempts++;
-        debugPrint("Firebase init attempt $_firebaseInitAttempts failed: $e");
-        if (_firebaseInitAttempts >= maxFirebaseInitAttempts) {
-          rethrow; // Fallisce definitivamente
-        }
-        await Future.delayed(const Duration(seconds: 2));
+      // 2. Inizializzazione Firebase (se abilitato)
+      if (widget.enableFirebase) {
+        await _initializeFirebaseServices();
       }
+
+      // 3. Caricamento risorse aggiuntive
+      await _loadAdditionalResources();
+
+    } catch (e, stack) {
+      _handleInitializationError(e, stack);
     }
   }
 
-  void _retryInitialization() {
+  Future<void> _loadEssentialConfigurations() async {
+    await Future.wait([
+      WebConfig.waitForConfig(),
+      initializeDateFormatting('it_IT', null),
+    ]);
+  }
+
+Future<void> _initializeFirebaseServices() async {
+  try {
+    // MODIFICA QUI: Verifica più robusta dell'inizializzazione
+    if (widget.enableFirebase && 
+        (Firebase.apps.isEmpty || !Firebase.apps.any((app) => app.name == '[DEFAULT]'))) {
+      
+      debugPrint("⚙️ Tentativo di inizializzazione Firebase da AppWrapper");
+      
+      await Firebase.initializeApp(
+        options: kIsWeb 
+            ? WebConfig.firebaseOptions 
+            : DefaultFirebaseOptions.currentPlatform,
+        name: 'Secondary' // Usa un nome diverso per questa inizializzazione
+      );
+
+      if (!kIsWeb) {
+        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+      }
+    } else {
+      debugPrint("ℹ️ Firebase già inizializzato, salto l'inizializzazione");
+    }
+  } catch (e, stack) {
+    debugPrint("⚠️ Errore nell'inizializzazione secondaria di Firebase: $e");
+    // Non blocchiamo l'app per questo errore
+  }
+}
+
+  Future<void> _loadAdditionalResources() async {
+    await Future.wait([
+      GoogleFonts.pendingFonts([GoogleFonts.poppins(), GoogleFonts.roboto()]),
+      Future.delayed(const Duration(milliseconds: 800)), // Tempo minimo per splash screen
+    ]);
+  }
+
+  void _handleInitializationError(dynamic e, StackTrace stack) {
+    debugPrint('⚠️ AppWrapper initialization error: $e');
+    debugPrint(stack.toString());
+
     setState(() {
-      _firebaseInitAttempts = 0;
-      _initialization = _initializeApp();
+      _initializationError = true;
+      _errorMessage = e.toString();
     });
+
+    if (!kIsWeb && widget.enableFirebase && Firebase.apps.isNotEmpty) {
+      FirebaseCrashlytics.instance.recordError(e, stack);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
+    return ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, theme, _) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData.light(),
+            darkTheme: ThemeData.dark(),
+            themeMode: theme.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            navigatorObservers: [
+              if (widget.enableFirebase && Firebase.apps.isNotEmpty)
+                FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+            ],
+            home: _buildAppContent(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAppContent() {
+    if (_initializationError) {
+      return _buildErrorScreen();
+    }
+
+    return FutureBuilder(
       future: _initialization,
       builder: (context, snapshot) {
-        // Durante il caricamento mostra splash
         if (snapshot.connectionState != ConnectionState.done) {
           return const SplashScreen();
         }
-
-        // Se errore mostra schermata con retry
-        if (snapshot.hasError) {
-          return _buildErrorScreen(snapshot.error);
-        }
-
-        // Se ok mostra app con provider, tema, analytics...
-        return ChangeNotifierProvider(
-          create: (_) => ThemeProvider(),
-          child: Consumer<ThemeProvider>(
-            builder: (context, themeProvider, _) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                theme: ThemeData.light(),
-                darkTheme: ThemeData.dark(),
-                themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-                navigatorObservers: [
-                  FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
-                ],
-                home: const TravelSageApp(),
-              );
-            },
-          ),
-        );
+        return const TravelSageApp();
       },
     );
   }
 
-  Widget _buildErrorScreen(Object? error) {
-    return MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 50),
-                const SizedBox(height: 20),
-                Text(
-                  'Errore durante l\'inizializzazione',
-                  style: GoogleFonts.roboto(fontSize: 20),
+  Widget _buildErrorScreen() {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 50),
+              const SizedBox(height: 20),
+              Text(
+                'Errore di inizializzazione',
+                style: GoogleFonts.roboto(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  error.toString(),
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.roboto(color: Colors.red),
+              ),
+              const SizedBox(height: 15),
+              Text(
+                _errorMessage ?? 'Errore sconosciuto',
+                style: GoogleFonts.roboto(
+                  color: Colors.red[700],
+                  fontSize: 16,
                 ),
-                const SizedBox(height: 30),
-                ElevatedButton(
-                  onPressed: _retryInitialization,
-                  child: const Text('Riprova'),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 25),
+              ElevatedButton(
+                onPressed: () => Navigator.of(globalNavigatorKey.currentContext!)
+                    .pushReplacement(MaterialPageRoute(
+                  builder: (_) => const AppWrapper(),
+                )),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[600],
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 ),
-                if (!kIsWeb) ...[
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                    onPressed: () {
-                      // Continua senza Firebase: mostra app senza Firebase
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(builder: (_) => const TravelSageApp()),
-                      );
-                    },
-                    child: const Text('Continua senza Firebase'),
-                  ),
-                ]
-              ],
-            ),
+                child: const Text(
+                  'Riprova',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+              if (!widget.enableFirebase) ...[
+                const SizedBox(height: 15),
+                TextButton(
+                  onPressed: () => Navigator.of(globalNavigatorKey.currentContext!)
+                      .pushReplacement(MaterialPageRoute(
+                    builder: (_) => const AppWrapper(enableFirebase: false),
+                  )),
+                  child: const Text('Continua in modalità offline'),
+                ),
+              ]
+            ],
           ),
         ),
       ),

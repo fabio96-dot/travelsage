@@ -41,6 +41,12 @@ dependencies:
   pedantic: ^1.11.0  # Considera di rimuoverlo (deprecato)
   http: ^1.4.0
   google_generative_ai: ^0.4.7
+  lucide_icons: ^0.257.0 # Per icone moderne
+  remixicon: ^1.4.1 # Per icone moderne
+  phosphor_flutter: ^1.0.1 # Per icone moderne
+  font_awesome_flutter: ^10.5.0  # Per icone più ricche
+  animated_background: ^2.0.0
+  lottie: ^3.1.0
 
 dev_dependencies:
   flutter_test:
@@ -53,6 +59,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo_travelsage.png
+    - assets/Travelsage.png
+    - assets/animations/splash_travel.json
     - .env  # Aggiunto il file .env agli assets
 
 flutter_launcher_icons:

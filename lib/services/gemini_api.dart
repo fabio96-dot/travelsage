@@ -13,7 +13,7 @@ class GeminiApi {
           // Configurazioni aggiuntive consigliate
           generationConfig: GenerationConfig(
             temperature: 0,
-            maxOutputTokens: 2000,
+            maxOutputTokens: 8000,
           ),
           safetySettings: [
             SafetySetting(HarmCategory.harassment, HarmBlockThreshold.none),
@@ -22,10 +22,17 @@ class GeminiApi {
 
   Future<String> generaItinerario({
     required String destinazione,
+    required String partenza,
     required DateTime dataInizio,
     required DateTime dataFine,
     required String budget,
     required List<String> interessi,
+    required String mezzoTrasporto,
+    required int attivitaGiornaliere,
+    required double raggioKm,
+    required double etaMedia,
+    required String tipologiaViaggiatore,
+    required String profilo,
   }) async {
     if (dataFine.isBefore(dataInizio)) {
       throw ArgumentError('La data finale non può essere prima di quella iniziale');
@@ -38,9 +45,18 @@ final prompt = '''
 Genera solo un oggetto JSON valido per questo viaggio. Non includere spiegazioni o testo aggiuntivo.
 
 Viaggio a: $destinazione
+partenza da: $partenza
 Date: ${dateFormatter.format(dataInizio)} - ${dateFormatter.format(dataFine)} ($giorni giorni)
 Budget: $budget €
 Interessi: ${interessi.join(', ')}
+Mezzo di trasporto: $mezzoTrasporto
+Attività giornaliere: $attivitaGiornaliere
+raggio massimo: ${raggioKm.toInt()} km
+
+### Profilo del viaggiatore:
+- Tipologia: $tipologiaViaggiatore
+- Età media: ${etaMedia.toInt()}
+- Profilo aggiuntivo: $profilo
 
 Formato richiesto:
 {
@@ -80,6 +96,10 @@ Formato richiesto:
 }
 
 Il totale dei costi stimati deve essere allineato al budget indicato.
+Il JSON deve contenere da 1 a $attivitaGiornaliere attività per ciascun giorno.
+Le attività devono rispettare il raggio massimo specificato (massimo ${raggioKm.toInt()} km dalla destinazione).
+Il totale dei costi stimati deve essere in linea col budget specificato.
+Le categorie valide sono: "trasporto", "attività", "pernottamento".
 
 Regole:
 - Restituisci solo JSON puro

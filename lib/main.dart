@@ -1,28 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; 
+import 'package:flutter/foundation.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:lottie/lottie.dart';
+import 'package:animated_background/animated_background.dart'; 
+import 'package:remixicon/remixicon.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';  // Per FontAwesome
 import 'package:provider/provider.dart';
+import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 import 'pages/theme_provider.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'firebase_options.dart';
 import 'screens/login/login_screen.dart';
 import 'models/viaggio.dart';
 import 'pages/viaggio_dettaglio_page.dart';
 import 'pages/modifica_viaggio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
+import 'firebase_options.dart';
 import 'models/travel_state.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
 import 'app_wrapper.dart';
 import 'theme/app_themes.dart';
 import 'package:travel_sage/services/firestore_service.dart';
-import 'package:pedantic/pedantic.dart';
 import 'dart:async';
 import 'package:travel_sage/services/gemini_api.dart';
 import 'dart:convert';
@@ -30,51 +33,59 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
+  // Configurazione ambiente e performance
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  await _setupEnvironment();
   
-  // Mostra subito la splash screen
-  runApp(const MaterialApp(
-    home: SplashScreen(),
-    debugShowCheckedModeBanner: false,
-  ));
+  // Esegui l'app con gestione degli errori
+  runZonedGuarded(
+    () => runApp(
+      MaterialApp(
+        navigatorKey: globalNavigatorKey,
+        home: const AppWrapper(),
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          // Pre-carica le risorse comuni
+          _precacheCommonResources(context);
+          return child!;
+        },
+      ),
+    ),
+    (error, stack) => _handleStartupError(error, stack),
+  );
 
+  // Inizializzazione servizi in background
+  unawaited(_initializeAppServices());
+}
+
+Future<void> _setupEnvironment() async {
+  // Configurazioni di debug
+  debugPrintRebuildDirtyWidgets = false;
+  debugProfileBuildsEnabled = false;
+  
+  // Caricamento variabili ambiente
+  await dotenv.load(fileName: ".env");
+
+  // Configurazione localizzazione
+  await initializeDateFormatting('it_IT', null);
+}
+
+Future<void> _initializeAppServices() async {
   try {
-    // Caricamento parallelo delle risorse
     await Future.wait([
-      _loadConfigurations(),
-      _initializeEssentialServices(),
+      _initializeFirebaseWithRetry(),
+      _loadEssentialResources(),
     ], eagerError: true);
-
-    // Attesa minima per la splash screen (1.5s)
-    await Future.delayed(const Duration(milliseconds: 1500));
     
-    _runMainApp();
+    // Log analytics solo dopo inizializzazione completata
+    if (Firebase.apps.isNotEmpty) {
+      await FirebaseAnalytics.instance.logAppOpen();
+    }
   } catch (e, stack) {
     _handleStartupError(e, stack);
-  }
-}
-
-Future<void> _loadConfigurations() async {
-  try {
-    // Carica .env solo per mobile
-    if (!kIsWeb) await dotenv.load(fileName: ".env");
-    await initializeDateFormatting('it_IT', null);
-  } catch (e) {
-    debugPrint('Config error: $e');
-    if (!kIsWeb) rethrow;
-  }
-}
-
-Future<void> _initializeEssentialServices() async {
-  try {
-    await _initializeFirebaseWithRetry();
-    unawaited(_loadGoogleFonts()); // Carica i font in background
-  } catch (e) {
-    debugPrint('Services init error: $e');
-    rethrow;
   }
 }
 
@@ -85,13 +96,16 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
     try {
       debugPrint("🔥 Tentativo ${attempts + 1} di inizializzazione Firebase");
 
-      if (Firebase.apps.isEmpty) {
+      // MODIFICA QUI: Verifica più accurata se Firebase è già inizializzato
+      if (Firebase.apps.isEmpty || !Firebase.apps.any((app) => app.name == '[DEFAULT]')) {
         final options = kIsWeb 
             ? WebConfig.firebaseOptions 
             : DefaultFirebaseOptions.currentPlatform;
 
-        final app = await Firebase.initializeApp(options: options)
-            .timeout(const Duration(seconds: 15));
+        final app = await Firebase.initializeApp(
+          options: options,
+          name: '[DEFAULT]' // Esplicitiamo il nome DEFAULT
+        ).timeout(const Duration(seconds: 15));
 
         debugPrint("✅ Firebase inizializzato: ${app.name}");
 
@@ -100,6 +114,9 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
               .setCrashlyticsCollectionEnabled(true);
           FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
         }
+        return;
+      } else {
+        debugPrint("ℹ️ Firebase è già inizializzato");
         return;
       }
     } on TimeoutException catch (e) {
@@ -114,29 +131,35 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
   }
 }
 
-Future<void> _loadGoogleFonts() async {
+Future<void> _loadEssentialResources() async {
   try {
-    await GoogleFonts.pendingFonts([GoogleFonts.roboto()]);
+    // Caricamento in parallelo di risorse essenziali
+    await Future.wait([
+      GoogleFonts.pendingFonts([GoogleFonts.roboto(), GoogleFonts.poppins()]),
+      Future.delayed(const Duration(milliseconds: 1500)), // Minimo splash time
+    ]);
   } catch (e) {
-    debugPrint("⚠️ Errore caricamento font: $e");
+    debugPrint("⚠️ Errore caricamento risorse: $e");
+    if (!kIsWeb) rethrow;
   }
 }
 
-void _runMainApp() {
-  runApp(const AppWrapper());
-
-  if (Firebase.apps.isNotEmpty) {
-    FirebaseAnalytics.instance.logAppOpen();
-  }
+void _precacheCommonResources(BuildContext context) {
+  // Pre-caricamento di risorse comuni
+  precacheImage(const AssetImage('assets/Travelsage.png'), context);
+  precacheImage(const AssetImage('assets/animations/splash_travel.json'), context);
 }
 
-void _handleStartupError(dynamic e, StackTrace stack) {
-  debugPrint("‼️ ERRORE CRITICO: $e\n$stack");
+void _handleStartupError(dynamic error, StackTrace stack) {
+  debugPrint("‼️ ERRORE CRITICO: ${error.toString()}");
+  debugPrint(stack.toString());
 
+  // Registra l'errore su Crashlytics se disponibile
   if (!kIsWeb && Firebase.apps.isNotEmpty) {
-    FirebaseCrashlytics.instance.recordError(e, stack);
+    FirebaseCrashlytics.instance.recordError(error, stack);
   }
 
+  // Mostra UI di errore
   runApp(
     MaterialApp(
       home: Scaffold(
@@ -152,30 +175,23 @@ void _handleStartupError(dynamic e, StackTrace stack) {
                   const SizedBox(height: 20),
                   Text(
                     kIsWeb ? 'Errore di connessione' : 'Errore nell\'avvio',
-                    style: GoogleFonts.roboto(fontSize: 20),
+                    style: GoogleFonts.roboto(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Text(
-                      _simplifyErrorMessage(e.toString()),
-                      style: GoogleFonts.roboto(color: Colors.red),
+                      _simplifyErrorMessage(error.toString()),
+                      style: GoogleFonts.roboto(
+                        color: Colors.red[700],
+                        fontSize: 16,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  ElevatedButton(
-                    onPressed: () => main(),
-                    child: const Text('Riprova'),
-                  ),
-                  if (!kIsWeb) ...[
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[300],
-                      ),
-                      onPressed: () => _runMainApp(),
-                      child: const Text('Continua senza Firebase'),
-                    ),
-                  ]
+                  _buildActionButtons(error),
                 ],
               ),
             ),
@@ -186,49 +202,354 @@ void _handleStartupError(dynamic e, StackTrace stack) {
   );
 }
 
-String _simplifyErrorMessage(String error) {
-  if (error.contains('Failed to load FirebaseOptions')) {
-    return kIsWeb 
-        ? 'Errore di connessione al server. Verifica la tua rete.'
-        : 'Configurazione Firebase mancante.';
-  }
-  return error;
+Widget _buildActionButtons(dynamic error) {
+  return Column(
+    children: [
+      ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blue[600],
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
+        onPressed: () => main(),
+        child: const Text(
+          'Riprova',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+      if (!kIsWeb && error.toString().contains('Firebase')) ...[
+        const SizedBox(height: 16),
+        TextButton(
+          onPressed: () {
+            runApp(
+              MaterialApp(
+                home: AppWrapper(enableFirebase: false),
+                debugShowCheckedModeBanner: false,
+              ),
+            );
+          },
+          child: const Text('Continua senza Firebase'),
+        ),
+      ]
+    ],
+  );
 }
 
-class SplashScreen extends StatelessWidget {
+String _simplifyErrorMessage(String error) {
+  const connectionErrors = [
+    'Failed to load FirebaseOptions',
+    'SocketException',
+    'Network is unreachable'
+  ];
+
+  if (connectionErrors.any(error.contains)) {
+    return kIsWeb
+        ? 'Errore di connessione al server. Verifica la tua connessione internet.'
+        : 'Problema di connessione. Verifica la tua rete e riprova.';
+  }
+
+  if (error.contains('MissingPluginException')) {
+    return 'Errore nei plugin nativi. Prova a ricostruire l\'app.';
+  }
+
+  return error.length > 150 ? '${error.substring(0, 150)}...' : error;
+}
+
+class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/logo_travelsage.png',
-              width: 200,
-              height: 200,
-            ),
-            const SizedBox(height: 30),
-            LinearProgressIndicator(
-              backgroundColor: Colors.grey[200],
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).primaryColor,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Caricamento...',
-              style: GoogleFonts.roboto(
-                fontSize: 16,
-                color: Theme.of(context).colorScheme.onBackground,
-              ),
-            ),
-          ],
-        ),
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+  // Controllori animazione
+  late AnimationController _entryController;
+  late Animation<double> _fadeIn;
+  late Animation<double> _scaleIn;
+  late Animation<Color?> _colorShift;
+
+  late AnimationController _exitController;
+  late Animation<double> _fadeOut;
+  late Animation<double> _slideUp;
+
+  late AnimationController _messageController;
+  late Animation<double> _messageFade;
+
+  // Messaggi di caricamento
+  final List<String> _loadingMessages = [
+    'Stiamo preparando la tua avventura...',
+    'Caricamento destinazioni...',
+    'Accendiamo la bussola...',
+    'Controllo del meteo...',
+    'Impostazione del budget...',
+    'Verifica bagagli virtuali...',
+    'Pronto a partire!',
+  ];
+
+  late Timer _messageTimer;
+  int _currentMessageIndex = 0;
+  bool _isTransitioning = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Configurazione animazioni di entrata
+    _entryController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    
+    _fadeIn = CurvedAnimation(
+      parent: _entryController,
+      curve: Curves.easeInOutCubic,
+    );
+    
+    _scaleIn = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entryController,
+        curve: Curves.easeOutBack,
       ),
+    );
+    
+    _colorShift = ColorTween(
+      begin: const Color(0xFF3EC8F6),
+      end: const Color(0xFF6D5DF6),
+    ).animate(_entryController);
+
+    // Configurazione animazioni di uscita
+    _exitController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    
+    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _exitController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    
+    _slideUp = Tween<double>(begin: 0.0, end: -0.1).animate(
+      CurvedAnimation(
+        parent: _exitController,
+        curve: Curves.easeIn,
+      ),
+    );
+
+    // Animazione per i messaggi
+    _messageController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    
+    _messageFade = CurvedAnimation(
+      parent: _messageController,
+      curve: Curves.easeInOut,
+    );
+
+    // Avvia le animazioni di entrata
+    _entryController.forward();
+
+    // Ciclo dei messaggi di caricamento
+    _messageTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      _messageController.reverse().then((_) {
+        if (mounted && !_isTransitioning) {
+          setState(() {
+            _currentMessageIndex = (_currentMessageIndex + 1) % _loadingMessages.length;
+          });
+          _messageController.forward();
+        }
+      });
+    });
+
+    // Timer per la transizione alla prossima schermata
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (mounted) {
+        setState(() => _isTransitioning = true);
+        await _exitController.forward();
+        _navigateToNextScreen();
+      }
+    });
+  }
+
+  void _navigateToNextScreen() {
+    final route = PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => const TravelSageApp(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.0, 0.1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.fastOutSlowIn,
+            )),
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 1000),
+    );
+
+    Navigator.of(globalNavigatorKey.currentContext!).pushReplacement(route);
+  }
+
+  @override
+  void dispose() {
+    _entryController.dispose();
+    _exitController.dispose();
+    _messageController.dispose();
+    _messageTimer.cancel();
+    super.dispose();
+  }
+
+  double _calculateLogoSize(BuildContext context) {
+    final shortestSide = MediaQuery.of(context).size.shortestSide;
+    if (shortestSide > 600) return 250;
+    if (shortestSide > 400) return 180;
+    return 140;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final logoSize = _calculateLogoSize(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([_entryController, _exitController]),
+      builder: (context, child) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              // Sfondo animato con gradient shift
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      _colorShift.value!,
+                      const Color(0xFF6D5DF6),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
+              
+              // Particelle animate
+              AnimatedBackground(
+                behaviour: RandomParticleBehaviour(
+                  options: ParticleOptions(
+                    baseColor: Colors.white.withOpacity(0.2),
+                    spawnOpacity: 0.0,
+                    opacityChangeRate: 0.25,
+                    minOpacity: 0.1,
+                    maxOpacity: 0.4,
+                    spawnMinSpeed: 30.0,
+                    spawnMaxSpeed: 70.0,
+                    particleCount: 40,
+                    spawnMaxRadius: 30.0,
+                    spawnMinRadius: 10.0,
+                  ),
+                ),
+                vsync: this,
+                child: Container(),
+              ),
+              
+              // Contenuto principale con animazioni
+              Transform.translate(
+                offset: Offset(0, _slideUp.value * screenHeight),
+                child: Opacity(
+                  opacity: _fadeOut.value,
+                  child: Center(
+                    child: FadeTransition(
+                      opacity: _fadeIn,
+                      child: ScaleTransition(
+                        scale: _scaleIn,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Logo
+                            ClipOval(
+                              child: Image.asset(
+                                'assets/Travelsage.png',
+                                width: logoSize,
+                                height: logoSize,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 40),
+                            
+                            // Barra di progresso
+                            SizedBox(
+                              width: logoSize * 0.4,
+                              child: LinearProgressIndicator(
+                                backgroundColor: Colors.white24,
+                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 20),
+                            
+                            // Animazione Lottie
+                            Lottie.asset(
+                              'assets/animations/splash_travel.json',
+                              width: 120,
+                              height: 120,
+                              repeat: true,
+                              frameRate: FrameRate(60),
+                            ),
+                            
+                            const SizedBox(height: 20),
+                            
+                            // Messaggio di caricamento con animazione
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 500),
+                              transitionBuilder: (child, animation) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.1),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                _loadingMessages[_currentMessageIndex],
+                                key: ValueKey(_loadingMessages[_currentMessageIndex]),
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                  shadows: [
+                                    Shadow(
+                                      blurRadius: 10,
+                                      color: Colors.black.withOpacity(0.3),
+                                      offset: const Offset(1, 1),
+                                    ),
+                                  ],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -242,23 +563,29 @@ class TravelSageApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
-    return MaterialApp(
-      title: 'TravelSage',
-      theme: AppThemes.lightTheme,              // 👈 nuovo tema chiaro
-      darkTheme: AppThemes.darkTheme,           // 👈 nuovo tema scuro
-      themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          } else if (snapshot.hasData) {
-            return const MainNavigation();
-          } else {
-            return LoginScreen(onLoginSuccess: () {});
-          }
-        },
-      ),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        Widget content;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          content = const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        } else if (snapshot.hasData) {
+          content = const MainNavigation();
+        } else {
+          content = LoginScreen(onLoginSuccess: () {});
+        }
+
+        // ✅ Unico MaterialApp, definito qui con tema
+        return MaterialApp(
+          title: 'TravelSage',
+          debugShowCheckedModeBanner: false,
+          theme: AppThemes.lightTheme,
+          darkTheme: AppThemes.darkTheme,
+          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          home: content,
+        );
+      },
     );
   }
 }
@@ -344,19 +671,44 @@ class OrganizeTripPage extends StatefulWidget {
   State<OrganizeTripPage> createState() => _OrganizeTripPageState();
 }
 
-class _OrganizeTripPageState extends State<OrganizeTripPage> {
+class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   String destination = '';
+  String departure = '';
   DateTime? startDate;
   DateTime? endDate;
   String budget = '';
   List<String> participants = [];
+  String profiloViaggiatore = '';
   bool usaIA = true;
-  List<String> interessiDisponibili = [
-    'Cultura', 'Natura', 'Relax', 'Cibo', 'Sport', 'Storia', 'Arte',
-  ];
-  List<String> interessiSelezionati = [];
+
+  // Nuovi campi
+  int attivitaGiornaliere = 3;
+  double raggioKm = 10;
+  double etaMedia = 30;
+  String tipologiaViaggiatore = 'Backpacker';
+  String mezzoTrasporto = 'Aereo';
+
+  final interessiDisponibili = ['Cultura', 'Natura', 'Relax', 'Cibo', 'Sport', 'Storia', 'Arte','Nightlife'];
+  List<String> interessiSelezionati = []; // Nessuno selezionato di default
+
+  final tipiViaggiatori = ['Backpacker', 'Luxurytraveller', 'Familytraveller', 'Digitalnomad', 'Roadtripper'];
+  final mezziTrasporto = [
+  {'nome': 'Aereo', 'icona': RemixIcons.plane_fill},
+  {'nome': 'Auto', 'icona': RemixIcons.car_fill},
+  {'nome': 'Moto', 'icona': RemixIcons.motorbike_fill},
+  {'nome': 'Nave', 'icona': RemixIcons.ship_fill},
+  {'nome': 'Camper', 'icona': RemixIcons.bus_2_fill},
+  {'nome': 'Treno', 'icona': RemixIcons.train_fill},];
   final TextEditingController _participantController = TextEditingController();
+
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   Future<void> _selectDate(bool isStart) async {
     final picked = await showDatePicker(
@@ -387,365 +739,477 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> {
     );
   }
 
-Future<void> _submit() async {
-  if (_formKey.currentState!.validate() &&
-      startDate != null &&
-      endDate != null &&
-      participants.isNotEmpty) {
-    try {
-      if (usaIA) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Generazione itinerario...')),
-        );
+  Future<void> _submit() async {
+    if (_formKey.currentState!.validate() &&
+        startDate != null &&
+        endDate != null &&
+        participants.isNotEmpty) {
+      try {
+        if (usaIA) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Generazione itinerario...')),
+          );
 
-        final gemini = GeminiApi();
-        final rawResponse = await gemini.generaItinerario(
-          destinazione: destination.trim(),
-          dataInizio: startDate!,
-          dataFine: endDate!,
-          budget: budget.trim(),
-          interessi: List.from(interessiSelezionati),
-        );
+          final gemini = GeminiApi();
+          final rawResponse = await gemini.generaItinerario(
+            partenza: departure.trim(),
+            destinazione: destination.trim(),
+            dataInizio: startDate!,
+            dataFine: endDate!,
+            budget: budget.trim(),
+            interessi: List.from(interessiSelezionati),
+            mezzoTrasporto: mezzoTrasporto,
+            attivitaGiornaliere: attivitaGiornaliere,
+            raggioKm: raggioKm,
+            etaMedia: etaMedia,
+            tipologiaViaggiatore: tipologiaViaggiatore,
+            profilo: profiloViaggiatore,
+          );
 
-        print('🔍 Risposta raw Gemini:\n$rawResponse');
+          print('🔍 Risposta raw Gemini:\n$rawResponse');
 
-        String estraiJson(String text) {
-          final start = text.indexOf('{');
-          final end = text.lastIndexOf('}');
-          if (start != -1 && end != -1 && end > start) {
-            return text.substring(start, end + 1);
+          String estraiJson(String text) {
+            final start = text.indexOf('{');
+            final end = text.lastIndexOf('}');
+            if (start != -1 && end != -1 && end > start) {
+              return text.substring(start, end + 1);
+            }
+            throw FormatException('JSON non trovato nella risposta');
           }
-          throw FormatException('JSON non trovato nella risposta');
-        }
 
-        late final String jsonString;
+          late final String jsonString;
 
-        try {
-          jsonString = estraiJson(rawResponse);
-        } catch (e) {
-          print('❌ Errore estrazione JSON: $e');
-          throw Exception('Risposta Gemini non contiene JSON valido');
-        }
-
-        print('🔍 JSON estratto:\n$jsonString');
-
-        final Map<String, dynamic> decoded = jsonDecode(jsonString);
-        final Map<String, List<Attivita>> itinerario = {};
-
-        DateTime parseOrario(String? timeString, DateTime giorno) {
           try {
-            if (timeString == null || !timeString.contains(':')) {
+            jsonString = estraiJson(rawResponse);
+          } catch (e) {
+            print('❌ Errore estrazione JSON: $e');
+            throw Exception('Risposta Gemini non contiene JSON valido');
+          }
+
+          print('🔍 JSON estratto:\n$jsonString');
+
+          final Map<String, dynamic> decoded = jsonDecode(jsonString);
+          final Map<String, List<Attivita>> itinerario = {};
+
+          DateTime parseOrario(String? timeString, DateTime giorno) {
+            try {
+              if (timeString == null || !timeString.contains(':')) {
+                return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
+              }
+              final parts = timeString.split(':');
+              return DateTime(
+                giorno.year,
+                giorno.month,
+                giorno.day,
+                int.parse(parts[0]),
+                int.parse(parts[1]),
+              );
+            } catch (e) {
+              print('❗️Errore parsing orario: $e, input: $timeString');
               return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
             }
-            final parts = timeString.split(':');
-            return DateTime(
-              giorno.year,
-              giorno.month,
-              giorno.day,
-              int.parse(parts[0]),
-              int.parse(parts[1]),
-            );
-          } catch (e) {
-            print('❗️Errore parsing orario: $e, input: $timeString');
-            return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
           }
+
+          final giorniTotali = endDate!.difference(startDate!).inDays + 1;
+          final dateList = List.generate(
+              giorniTotali, (i) => startDate!.add(Duration(days: i)));
+
+          int index = 0;
+          decoded.forEach((key, attivitaList) {
+            final giorno =
+                index < dateList.length ? dateList[index] : dateList.last;
+            final keyGiorno = DateFormat('yyyy-MM-dd').format(giorno);
+
+            if (attivitaList is List) {
+              itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
+                return Attivita(
+                  id: const Uuid().v4(),
+                  titolo: a['titolo'] ?? 'Attività',
+                  descrizione: a['descrizione'] ?? '',
+                  orario: parseOrario(a['orario'], giorno),
+                  luogo: a['luogo'] ?? '',
+                  completata: false,
+                  categoria: a['categoria'] ?? 'attività',
+                  costoStimato: (a['costoStimato'] is num)
+                      ? (a['costoStimato'] as num).toDouble()
+                      : 0.0,
+                  generataDaIA: true,
+                );
+              }).toList();
+            }
+
+            index++;
+          });
+
+          final nuovoViaggio = Viaggio(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            titolo: destination.trim(),
+            partenza: departure.trim(),
+            destinazione: destination.trim(),
+            dataInizio: startDate!,
+            dataFine: endDate!,
+            budget: budget.trim(),
+            partecipanti: List.from(participants),
+            mezzoTrasporto: mezzoTrasporto,
+            attivitaGiornaliere: attivitaGiornaliere,
+            raggioKm: raggioKm,
+            etaMedia: etaMedia,
+            tipologiaViaggiatore: tipologiaViaggiatore,
+            confermato: false,
+            spese: [],
+            archiviato: false,
+            note: null,
+            itinerario: itinerario,
+            interessi: List.from(interessiSelezionati),
+          );
+
+          await FirestoreService().saveViaggio(nuovoViaggio);
+          widget.onViaggioCreato(nuovoViaggio);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Viaggio creato con successo')),
+          );
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+            ),
+          );
+        } else {
+          // 🎯 IA disattivata: viaggio vuoto
+          final nuovoViaggio = Viaggio(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            titolo: destination.trim(),
+            partenza: departure.trim(),
+            destinazione: destination.trim(),
+            dataInizio: startDate!,
+            dataFine: endDate!,
+            budget: budget.trim(),
+            partecipanti: List.from(participants),
+            mezzoTrasporto: mezzoTrasporto,
+            attivitaGiornaliere: attivitaGiornaliere,
+            raggioKm: raggioKm,
+            etaMedia: etaMedia,
+            tipologiaViaggiatore: tipologiaViaggiatore,
+            confermato: false,
+            spese: [],
+            archiviato: false,
+            note: null,
+            itinerario: {},
+            interessi: List.from(interessiSelezionati),
+          );
+
+          await FirestoreService().saveViaggio(nuovoViaggio);
+          widget.onViaggioCreato(nuovoViaggio);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Viaggio creato (manuale)')),
+          );
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
+            ),
+          );
         }
-
-        final giorniTotali = endDate!.difference(startDate!).inDays + 1;
-        final dateList = List.generate(giorniTotali,
-          (i) => startDate!.add(Duration(days: i)));
-
-        int index = 0;
-        decoded.forEach((key, attivitaList) {
-          final giorno = index < dateList.length
-              ? dateList[index]
-              : dateList.last;
-          final keyGiorno = DateFormat('yyyy-MM-dd').format(giorno);
-
-          if (attivitaList is List) {
-            itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
-              return Attivita(
-                id: const Uuid().v4(),
-                titolo: a['titolo'] ?? 'Attività',
-                descrizione: a['descrizione'] ?? '',
-                orario: parseOrario(a['orario'], giorno),
-                luogo: a['luogo'] ?? '',
-                completata: false,
-                categoria: a['categoria'] ?? 'attività',
-                costoStimato: (a['costoStimato'] is num)
-                    ? (a['costoStimato'] as num).toDouble()
-                    : 0.0,
-                generataDaIA: true
-              );
-            }).toList();
-          }
-
-          index++;
-        });
-
-        final nuovoViaggio = Viaggio(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          titolo: destination.trim(),
-          destinazione: destination.trim(),
-          dataInizio: startDate!,
-          dataFine: endDate!,
-          budget: budget.trim(),
-          partecipanti: List.from(participants),
-          confermato: false,
-          spese: [],
-          archiviato: false,
-          note: null,
-          itinerario: itinerario,
-          interessi: List.from(interessiSelezionati),
-        );
-
-        await FirestoreService().saveViaggio(nuovoViaggio);
-        widget.onViaggioCreato(nuovoViaggio);
-
+      } catch (e, stackTrace) {
+        print('❌ Errore generazione viaggio: $e');
+        print(stackTrace);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Viaggio creato con successo')),
-        );
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
-          ),
-        );
-      } else {
-        // 🎯 IA disattivata: viaggio vuoto
-        final nuovoViaggio = Viaggio(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          titolo: destination.trim(),
-          destinazione: destination.trim(),
-          dataInizio: startDate!,
-          dataFine: endDate!,
-          budget: budget.trim(),
-          partecipanti: List.from(participants),
-          confermato: false,
-          spese: [],
-          archiviato: false,
-          note: null,
-          itinerario: {}, // <-- niente attività
-          interessi: List.from(interessiSelezionati),
-        );
-
-        await FirestoreService().saveViaggio(nuovoViaggio);
-        widget.onViaggioCreato(nuovoViaggio);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Viaggio creato (manuale)')),
-        );
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
-          ),
+          SnackBar(content: Text('Errore nella creazione del viaggio: $e')),
         );
       }
-    } catch (e, stackTrace) {
-      print('❌ Errore generazione viaggio: $e');
-      print(stackTrace);
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore nella creazione del viaggio: $e')),
+        const SnackBar(content: Text('Completa tutti i campi')),
       );
     }
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Completa tutti i campi')),
-    );
   }
-}
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Organizza Viaggio')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              TextFormField(
-                decoration: InputDecoration(
-                  labelText: 'Destinazione',
-                  prefixIcon: const Icon(Icons.location_on_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onChanged: (val) => destination = val,
-                validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
+      appBar: AppBar(
+        title: const Text('Organizza Viaggio'),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Theme.of(context).colorScheme.primary,
+          labelColor: Theme.of(context).colorScheme.primary,
+          unselectedLabelColor: Colors.grey,
+          tabs: [  // Rimuovi 'const' qui
+            Tab(
+              icon: FaIcon(
+                FontAwesomeIcons.rocket,
+                color: Theme.of(context).colorScheme.primary,  // Corretto: Theme con T maiuscolo
               ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => _selectDate(true),
-                      borderRadius: BorderRadius.circular(16),
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: 'Data Inizio',
-                          prefixIcon: const Icon(Icons.date_range_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: Text(startDate == null
-                            ? 'Seleziona'
-                            : DateFormat('dd/MM/yyyy').format(startDate!)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => _selectDate(false),
-                      borderRadius: BorderRadius.circular(16),
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: 'Data Fine',
-                          prefixIcon: const Icon(Icons.date_range_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: Text(endDate == null
-                            ? 'Seleziona'
-                            : DateFormat('dd/MM/yyyy').format(endDate!)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                decoration: InputDecoration(
-                  labelText: 'Budget per persona (€)',
-                  prefixIcon: const Icon(Icons.euro_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                keyboardType: TextInputType.number,
-                onChanged: (val) => budget = val,
-                validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
-              ),
-              const SizedBox(height: 32),
-              Text('Partecipanti', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: participants
-                    .map((p) => Chip(
-                          label: Text(p),
-                          onDeleted: () {
-                            setState(() {
-                              participants.remove(p);
-                            });
-                          },
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _participantController,
-                      decoration: InputDecoration(
-                        labelText: 'Aggiungi partecipante',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      onSubmitted: (val) {
-                        if (val.trim().isNotEmpty) {
-                          setState(() {
-                            participants.add(val.trim());
-                            _participantController.clear();
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_participantController.text.trim().isNotEmpty) {
-                        setState(() {
-                          participants.add(_participantController.text.trim());
-                          _participantController.clear();
-                        });
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    child: const Icon(Icons.add),
-                  )
-                ],
-              ),
-
-              // Campo toggle IA
-              const SizedBox(height: 32),
-              SwitchListTile(
-                title: Row(
-                  children: const [
-                    Icon(Icons.smart_toy, size: 20, color: Colors.deepPurple),
-                    SizedBox(width: 8),
-                    Text("Sfrutta l'assistente IA"),
-                  ],
-                ),
-                subtitle: const Text("Genera automaticamente un itinerario personalizzato"),
-                value: usaIA,
-                onChanged: (val) {
-                  setState(() => usaIA = val);
-                },
-              ),
-
-              const SizedBox(height: 32),
-              Text('Interessi del viaggio', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: interessiDisponibili.map((interesse) {
-                  final selezionato = interessiSelezionati.contains(interesse);
-                  return FilterChip(
-                    label: Text(interesse),
-                    selected: selezionato,
-                    onSelected: (bool selected) {
-                      setState(() {
-                        if (selected) {
-                          interessiSelezionati.add(interesse);
-                        } else {
-                          interessiSelezionati.remove(interesse);
-                        }
-                      });
-                    },
-                    selectedColor: Colors.indigo.shade200,
-                    checkmarkColor: Colors.white,
-                    labelStyle: TextStyle(
-                      color: selezionato ? Colors.white : Colors.black,
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _submit,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Conferma Viaggio', style: TextStyle(fontSize: 18)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    backgroundColor: Colors.indigo,
-                  ),
-                ),
-              ),
-            ],
+            ),
+          Tab(
+            icon: FaIcon(
+              FontAwesomeIcons.userAstronaut,
+              color: Theme.of(context).colorScheme.primary,  // Aggiungi colore anche qui per consistenza
+            ),
           ),
-        ),
+        ],
+      )
+      ),
+      body: Stack(
+        children: [
+          Form(
+            key: _formKey,
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildViaggioTab(theme),
+                _buildViaggiatoreTab(theme),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                _submit();
+              },
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Organizza Viaggio', style: TextStyle(fontSize: 18)),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                backgroundColor: Colors.indigo,
+              ),
+            ),
+          )
+        ],
       ),
     );
   }
+
+  Widget _buildViaggioTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildTextField('Partenza', Icons.flight_takeoff, (val) => departure = val),
+          const SizedBox(height: 16),
+          _buildTextField('Destinazione', Icons.location_on_outlined, (val) => destination = val),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _buildDatePicker('Data Inizio', true, startDate)),
+              const SizedBox(width: 16),
+              Expanded(child: _buildDatePicker('Data Fine', false, endDate)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildTextField('Budget per persona (€)', Icons.euro_outlined, (val) => budget = val,
+              isNumeric: true),
+          const SizedBox(height: 16),
+          
+          const SizedBox(height: 16),
+          Text('Mezzo di trasporto', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 16,
+            children: mezziTrasporto.map((mezzo) {
+              final nome = mezzo['nome'] as String;
+              final icona = mezzo['icona'] as IconData;
+              final selezionato = mezzoTrasporto == nome;
+
+              return Tooltip(
+                message: nome,
+                child: GestureDetector(
+                  onTap: () => setState(() => mezzoTrasporto = nome),
+                  child: CircleAvatar(
+                    radius: 28,
+                    backgroundColor: selezionato ? Colors.indigo : Colors.grey[300],
+                    child: Icon(
+                      icona,
+                      size: 28,
+                      color: selezionato ? Colors.white : Colors.black54,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+            _buildSlider('Attività giornaliere', attivitaGiornaliere.toDouble(), 1, 8, (val) {
+              setState(() => attivitaGiornaliere = val.round());
+            }),
+            const SizedBox(height: 8),
+            _buildSlider('Raggio massimo (km)', raggioKm, 0, 500, (val) {
+              setState(() => raggioKm = val);
+            }, step: 15),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: Row(
+                children: const [
+                  Text("Sfrutta l'assistente IA per generare l'itinerario"),
+                  SizedBox(width: 8),
+                  Icon(Icons.smart_toy_sharp, color: Colors.indigo),
+                ],
+              ),
+              value: usaIA,
+              onChanged: (val) => setState(() => usaIA = val),
+            ),
+          ],
+        ),
+      );
+  }
+
+  Widget _buildViaggiatoreTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSlider('Età media', etaMedia, 10, 100, (val) => setState(() => etaMedia = val)),
+          const SizedBox(height: 32),
+          Text('Tipologia Viaggiatore', style: theme.textTheme.titleMedium),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildViaggiatoreIcon(Icons.backpack, 'Backpacker'),
+              _buildViaggiatoreIcon(RemixIcons.diamond_fill, 'Luxury'),
+              _buildViaggiatoreIcon(Icons.family_restroom, 'Family'),
+              _buildViaggiatoreIcon(RemixIcons.computer_fill, 'Digital Nomad'),
+              _buildViaggiatoreIcon(RemixIcons.car_fill, 'Road Tripper'),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Text('Interessi', style: theme.textTheme.titleMedium),
+          Wrap(
+            spacing: 8,
+            children: interessiDisponibili.map((interesse) => FilterChip(
+              label: Text(interesse),
+              selected: interessiSelezionati.contains(interesse),
+              onSelected: (selected) => setState(() {
+                if (selected) {
+                  interessiSelezionati.add(interesse);
+                } else {
+                  interessiSelezionati.remove(interesse);
+                }
+              }),
+            )).toList(),
+          ),
+          const SizedBox(height: 32),
+          Text('Partecipanti', style: theme.textTheme.titleMedium),
+          Wrap(
+            spacing: 8,
+            children: participants.map((p) => Chip(
+              label: Text(p),
+              onDeleted: () => setState(() => participants.remove(p)),
+            )).toList(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _participantController,
+                  decoration: const InputDecoration(labelText: 'Aggiungi partecipante'),
+                  onSubmitted: (val) => _addParticipant(val),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: () => _addParticipant(_participantController.text),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, IconData icon, Function(String) onChanged,
+      {bool isNumeric = false}) {
+    return TextFormField(
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      keyboardType: isNumeric ? TextInputType.number : null,
+      onChanged: onChanged,
+      validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
+    );
+  }
+
+  Widget _buildDatePicker(String label, bool isStart, DateTime? selectedDate) {
+    return InkWell(
+      onTap: () => _selectDate(isStart),
+      borderRadius: BorderRadius.circular(16),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.date_range_outlined),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: Text(selectedDate == null
+            ? 'Seleziona'
+            : DateFormat('dd/MM/yyyy').format(selectedDate)),
+      ),
+    );
+  }
+
+  Widget _buildSlider(String label, double value, double min, double max, Function(double) onChanged, {int? step}) {
+    final divisions = step != null ? ((max - min) / step).round() : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: ${value.round()}'),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: value.round().toString(),
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViaggiatoreIcon(IconData icon, String tipo) {
+  final bool selected = tipologiaViaggiatore == tipo;
+
+  return Tooltip(
+    message: tipo,
+    child: GestureDetector(
+      onTap: () => setState(() => tipologiaViaggiatore = tipo),
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: selected ? Colors.indigo : Colors.grey[300],
+          boxShadow: selected
+              ? [BoxShadow(color: Colors.indigo.withOpacity(0.5), blurRadius: 8)]
+              : [],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Icon(icon, color: selected ? Colors.white : Colors.black54, size: 28),
+      ),
+    ),
+  );
 }
+
+  void _addParticipant(String name) {
+    if (name.trim().isNotEmpty) {
+      setState(() {
+        participants.add(name.trim());
+        _participantController.clear();
+      });
+    }
+  }
+}
+
 
 class TripsPage extends StatefulWidget {
   final VoidCallback onAddNewTrip;

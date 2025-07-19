@@ -4,6 +4,7 @@ import 'spesa.dart';
 class Viaggio {
   final String id;
   final String titolo;
+  final String partenza;
   final String destinazione;
   final DateTime dataInizio;
   final DateTime dataFine;
@@ -15,10 +16,16 @@ class Viaggio {
   final String? note;
   Map<String, List<Attivita>> itinerario;
   final List<String> interessi;
+  final String mezzoTrasporto; // Nuovo campo per mezzo di trasporto
+  final int attivitaGiornaliere; // Numero di attività giornaliere
+  final double raggioKm; // Raggio massimo in km
+  final double etaMedia; // Età media dei partecipanti
+  final String tipologiaViaggiatore; // Tipologia del viaggiatore
 
   Viaggio({
     required this.id,
     required this.titolo,
+    required this.partenza,
     required this.destinazione,
     required this.dataInizio,
     required this.dataFine,
@@ -29,6 +36,11 @@ class Viaggio {
     this.archiviato = false,
     this.note,
     this.interessi = const [], // 👈 nuovo campo
+    this.mezzoTrasporto = 'Aereo', // 👈 nuovo campo con valore di default
+    this.attivitaGiornaliere = 3, // 👈 nuovo campo con valore di default
+    this.raggioKm = 100.0, // 👈 nuovo campo con valore di default
+    this.etaMedia = 30.0, // 👈 nuovo campo con valore di default
+    this.tipologiaViaggiatore = 'Backpacker', // 👈 nuovo campo con valore di default
     Map<String, List<Attivita>>? itinerario,
   }) : itinerario = itinerario ?? {};
 
@@ -37,6 +49,7 @@ class Viaggio {
     return Viaggio(
       id: id,
       titolo: titolo,
+      partenza: partenza,
       destinazione: destinazione,
       dataInizio: dataInizio,
       dataFine: dataFine,
@@ -47,6 +60,12 @@ class Viaggio {
       archiviato: archiviato,
       note: note,
       itinerario: Map.from(itinerario),
+      interessi: List.from(interessi), // 👈 copia della lista degli interessi
+      mezzoTrasporto: mezzoTrasporto, // 👈 copia del mezzo di trasporto
+      attivitaGiornaliere: attivitaGiornaliere, // 👈 copia del numero di attività giornaliere
+      raggioKm: raggioKm, // 👈 copia del raggio massimo
+      etaMedia: etaMedia, // 👈 copia dell'età media
+      tipologiaViaggiatore: tipologiaViaggiatore, // 👈 copia della tipologia del viaggiatore
     );
   }
 
@@ -54,6 +73,7 @@ class Viaggio {
   Viaggio copyWith({
     String? id,
     String? titolo,
+    String? partenza,
     String? destinazione,
     DateTime? dataInizio,
     DateTime? dataFine,
@@ -64,11 +84,17 @@ class Viaggio {
     bool? archiviato,
     String? note,
     List<String>? interessi, // 👈 nuovo parametro
+    String? mezzoTrasporto, // 👈 nuovo parametro
+    int? attivitaGiornaliere, // 👈 nuovo parametro
+    double? raggioKm, // 👈 nuovo parametro
+    double? etaMedia, // 👈 nuovo parametro
+    String? tipologiaViaggiatore, // 👈 nuovo parametro
     Map<String, List<Attivita>>? itinerario,
   }) {
     return Viaggio(
       id: id ?? this.id,
       titolo: titolo ?? this.titolo,
+      partenza: partenza ?? this.partenza,
       destinazione: destinazione ?? this.destinazione,
       dataInizio: dataInizio ?? this.dataInizio,
       dataFine: dataFine ?? this.dataFine,
@@ -80,6 +106,11 @@ class Viaggio {
       note: note ?? this.note,
       interessi: interessi ?? this.interessi, // 👈
       itinerario: itinerario ?? Map.from(this.itinerario),
+      mezzoTrasporto: mezzoTrasporto ?? this.mezzoTrasporto, // 👈
+      attivitaGiornaliere: attivitaGiornaliere ?? this.attivitaGiornaliere, // 👈
+      raggioKm: raggioKm ?? this.raggioKm, // 👈
+      etaMedia: etaMedia ?? this.etaMedia, // 👈
+      tipologiaViaggiatore: tipologiaViaggiatore ?? this.tipologiaViaggiatore, // 👈
     );
   }
 
@@ -145,6 +176,7 @@ class Viaggio {
     return Viaggio(
       id: json['id'],
       titolo: json['titolo'],
+      partenza: json['partenza'] ?? '', 
       destinazione: json['destinazione'],
       dataInizio: DateTime.parse(json['dataInizio']),
       dataFine: DateTime.parse(json['dataFine']),
@@ -158,6 +190,11 @@ class Viaggio {
       archiviato: json['archiviato'] ?? false,
       note: json['note'],
       interessi: List<String>.from(json['interessi'] ?? []), // 👈 nuovo campo
+      mezzoTrasporto: json['mezzoTrasporto'] ?? 'Aereo', // 👈 nuovo campo con valore di default
+      attivitaGiornaliere: json['attivitaGiornaliere'] ?? 3, // 👈 nuovo campo con valore di default
+      raggioKm: (json['raggioKm'] ?? 100.0).toDouble(), // 👈 nuovo campo con valore di default
+      etaMedia: (json['etaMedia'] ?? 30.0).toDouble(), // 👈 nuovo campo con valore di default
+      tipologiaViaggiatore: json['tipologiaViaggiatore'] ?? 'Backpacker', // 👈 nuovo campo con valore di default
       itinerario: json['itinerario'] != null
           ? (json['itinerario'] as Map<String, dynamic>).map(
               (key, value) => MapEntry(
@@ -173,6 +210,7 @@ class Viaggio {
     return {
       'id': id,
       'titolo': titolo,
+      'partenza': partenza,
       'destinazione': destinazione,
       'dataInizio': dataInizio.toIso8601String(),
       'dataFine': dataFine.toIso8601String(),
@@ -183,6 +221,11 @@ class Viaggio {
       'archiviato': archiviato,
       'note': note,
       'interessi': interessi,
+      'mezzoTrasporto': mezzoTrasporto, // 👈 nuovo campo
+      'attivitaGiornaliere': attivitaGiornaliere, // 👈 nuovo campo
+      'raggioKm': raggioKm, // 👈 nuovo campo
+      'etaMedia': etaMedia, // 👈 nuovo campo
+      'tipologiaViaggiatore': tipologiaViaggiatore, // 👈 nuovo campo
       'itinerario': itinerario.map(
         (key, value) => MapEntry(
           key,

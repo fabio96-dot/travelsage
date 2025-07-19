@@ -4,6 +4,7 @@ final mockViaggi = [
   Viaggio(
     id:"1",
     titolo: 'Viaggio a Tokyo',
+    partenza: 'Roma',
     destinazione: 'Tokyo',
     dataInizio: DateTime(2024, 4, 10),
     dataFine: DateTime(2024, 6, 18),
@@ -14,6 +15,7 @@ final mockViaggi = [
   ),
   Viaggio(
     id:"2",
+    partenza: 'Milano',
     titolo: 'Viaggio a Barcellona',
     destinazione: 'Barcellona',
     dataInizio: DateTime(2023, 9, 3),
