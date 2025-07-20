@@ -553,7 +553,7 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
         Navigator.of(dialogContext).pop();
 
         if (!mounted) return;
-        Navigator.pushReplacement(
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => ViaggioCreatoPage(viaggio: nuovoViaggio)),
         );
@@ -589,10 +589,20 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
         );
 
         if (!mounted) return;
-        Navigator.push(
+        final result = await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1)),
+          MaterialPageRoute(
+            builder: (_) => ViaggioDettaglioPage(
+              viaggio: nuovoViaggio,
+              index: 0,
+            ),
+          ),
         );
+
+        if (result == true && mounted) {
+          // Ricarica i viaggi perché l'utente è tornato da viaggio dettagliato
+          ref.read(travelProvider.notifier).caricaViaggi();
+        }
       }
     } catch (e, stackTrace) {
       print('❌ Errore generazione viaggio: $e');
@@ -690,32 +700,46 @@ class TripsPage extends ConsumerStatefulWidget {
   ConsumerState<TripsPage> createState() => _TripsPageState();
 }
 
-class _TripsPageState extends ConsumerState<TripsPage> {
+class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserver {
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _caricaViaggiIniziali();
+  }
 
-    // Carica i viaggi e archivia quelli scaduti
-    Future.delayed(Duration.zero, () async {
-      try {
-        await ref.read(travelProvider.notifier).caricaViaggi();
-        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Errore caricamento viaggi: $e')),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-          });
-        }
+  Future<void> _caricaViaggiIniziali() async {
+    try {
+      await ref.read(travelProvider.notifier).caricaViaggi();
+      await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore caricamento viaggi: $e')),
+        );
       }
-    });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(travelProvider.notifier).caricaViaggi();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   void _showDeleteDialog(int index) {
@@ -812,7 +836,6 @@ class _TripsPageState extends ConsumerState<TripsPage> {
         ),
         itemBuilder: (context, index) {
           final viaggio = viaggiNonArchiviati[index];
-          print('Rendering card viaggio: id=${viaggio.id}, titolo="${viaggio.titolo}"');
           final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
           final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
               ? viaggio.titolo.trim()
@@ -827,15 +850,17 @@ class _TripsPageState extends ConsumerState<TripsPage> {
             key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
             onTap: () {
               if (viaggio.confermato) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ViaggioDettaglioPage(
-                      viaggio: viaggio,
-                      index: index,
-                    ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ViaggioDettaglioPage(
+                    viaggio: viaggio,
+                    index: index,
                   ),
-                );
+                ),
+              ).then((_) {
+                ref.read(travelProvider.notifier).caricaViaggi(); // 🔁 aggiorna lista
+              });
               } else {
                 Navigator.push(
                   context,
@@ -845,7 +870,10 @@ class _TripsPageState extends ConsumerState<TripsPage> {
                       index: index,
                     ),
                   ),
-                ).then((_) => setState(() {}));
+                ).then((_) {
+                  // Dopo la modifica, ricarica i viaggi
+                  ref.read(travelProvider.notifier).caricaViaggi();
+                });
               }
             },
             child: Container(

@@ -810,7 +810,12 @@ Widget _buildExpenseTile(Spesa spesa) {
 
 @override
 Widget build(BuildContext context) {
-  return Scaffold(
+  return WillPopScope(
+    onWillPop: () async {
+      Navigator.pop(context, true);  // ritorna true al chiamante
+      return false; // blocca il pop automatico
+    },
+  child: Scaffold(
     appBar: AppBar(
       title: Hero(
         tag: 'viaggio_${widget.viaggio.destinazione}_${widget.index}',
@@ -840,6 +845,7 @@ Widget build(BuildContext context) {
       ),
     ),
     floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+  )
   );
 }
 }
