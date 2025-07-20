@@ -3,15 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:lottie/lottie.dart';
-import 'package:animated_background/animated_background.dart'; 
-import 'package:remixicon/remixicon.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';  // Per FontAwesome
-import 'package:provider/provider.dart';
 import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
-import 'pages/theme_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/login/login_screen.dart';
 import 'models/viaggio.dart';
@@ -20,7 +16,6 @@ import 'pages/modifica_viaggio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
 import 'firebase_options.dart';
-import 'models/travel_state.dart';
 import 'pages/diario/Diary_Page.dart';
 import '../widgets/skeleton_loader.dart';
 import 'app_wrapper.dart';
@@ -32,45 +27,57 @@ import 'dart:convert';
 import 'pages/viaggiocreatoAI.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'pages/viaggio_form_tab.dart';
+import 'providers/organize_trip_controller.dart';
+import 'pages/viaggiatore_form_tab.dart';
+import 'providers/theme_provider.dart';
+import 'providers/travel_provider.dart';
+import 'providers/splash_screen_provider.dart';
 
 
 final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  // Configurazione ambiente e performance
   WidgetsFlutterBinding.ensureInitialized();
-  await _setupEnvironment();
-  
-  // Esegui l'app con gestione degli errori
-  runZonedGuarded(
-    () => runApp(
-      MaterialApp(
-        navigatorKey: globalNavigatorKey,
-        home: const AppWrapper(),
-        debugShowCheckedModeBanner: false,
-        builder: (context, child) {
-          // Pre-carica le risorse comuni
-          _precacheCommonResources(context);
-          return child!;
-        },
-      ),
-    ),
-    (error, stack) => _handleStartupError(error, stack),
-  );
 
-  // Inizializzazione servizi in background
+  await _setupEnvironment();
+
+  runZonedGuarded(() {
+    runApp(
+      const ProviderScope(
+        child: AppEntryPoint(),
+      ),
+    );
+  }, (error, stack) => _handleStartupError(error, stack));
+
   unawaited(_initializeAppServices());
 }
 
+class AppEntryPoint extends ConsumerWidget {
+  const AppEntryPoint({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
+    return MaterialApp(
+      navigatorKey: globalNavigatorKey,
+      debugShowCheckedModeBanner: false,
+      theme: AppThemes.lightTheme,
+      darkTheme: AppThemes.darkTheme,
+      themeMode: themeMode,
+      home: const SplashScreen(), // Mostra splash screen all'avvio
+    );
+  }
+}
+
 Future<void> _setupEnvironment() async {
-  // Configurazioni di debug
   debugPrintRebuildDirtyWidgets = false;
   debugProfileBuildsEnabled = false;
-  
-  // Caricamento variabili ambiente
+
   await dotenv.load(fileName: ".env");
 
-  // Configurazione localizzazione
   await initializeDateFormatting('it_IT', null);
 }
 
@@ -80,8 +87,7 @@ Future<void> _initializeAppServices() async {
       _initializeFirebaseWithRetry(),
       _loadEssentialResources(),
     ], eagerError: true);
-    
-    // Log analytics solo dopo inizializzazione completata
+
     if (Firebase.apps.isNotEmpty) {
       await FirebaseAnalytics.instance.logAppOpen();
     }
@@ -97,22 +103,20 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
     try {
       debugPrint("🔥 Tentativo ${attempts + 1} di inizializzazione Firebase");
 
-      // MODIFICA QUI: Verifica più accurata se Firebase è già inizializzato
       if (Firebase.apps.isEmpty || !Firebase.apps.any((app) => app.name == '[DEFAULT]')) {
-        final options = kIsWeb 
-            ? WebConfig.firebaseOptions 
+        final options = kIsWeb
+            ? WebConfig.firebaseOptions
             : DefaultFirebaseOptions.currentPlatform;
 
         final app = await Firebase.initializeApp(
           options: options,
-          name: '[DEFAULT]' // Esplicitiamo il nome DEFAULT
+          name: '[DEFAULT]',
         ).timeout(const Duration(seconds: 15));
 
         debugPrint("✅ Firebase inizializzato: ${app.name}");
 
         if (!kIsWeb) {
-          await FirebaseCrashlytics.instance
-              .setCrashlyticsCollectionEnabled(true);
+          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
           FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
         }
         return;
@@ -134,10 +138,9 @@ Future<void> _initializeFirebaseWithRetry({int maxRetries = 3}) async {
 
 Future<void> _loadEssentialResources() async {
   try {
-    // Caricamento in parallelo di risorse essenziali
     await Future.wait([
       GoogleFonts.pendingFonts([GoogleFonts.roboto(), GoogleFonts.poppins()]),
-      Future.delayed(const Duration(milliseconds: 1500)), // Minimo splash time
+      Future.delayed(const Duration(milliseconds: 1500)),
     ]);
   } catch (e) {
     debugPrint("⚠️ Errore caricamento risorse: $e");
@@ -145,22 +148,14 @@ Future<void> _loadEssentialResources() async {
   }
 }
 
-void _precacheCommonResources(BuildContext context) {
-  // Pre-caricamento di risorse comuni
-  precacheImage(const AssetImage('assets/Travelsage.png'), context);
-  precacheImage(const AssetImage('assets/animations/splash_travel.json'), context);
-}
-
 void _handleStartupError(dynamic error, StackTrace stack) {
   debugPrint("‼️ ERRORE CRITICO: ${error.toString()}");
   debugPrint(stack.toString());
 
-  // Registra l'errore su Crashlytics se disponibile
   if (!kIsWeb && Firebase.apps.isNotEmpty) {
     FirebaseCrashlytics.instance.recordError(error, stack);
   }
 
-  // Mostra UI di errore
   runApp(
     MaterialApp(
       home: Scaffold(
@@ -223,7 +218,7 @@ Widget _buildActionButtons(dynamic error) {
           onPressed: () {
             runApp(
               MaterialApp(
-                home: AppWrapper(enableFirebase: false),
+                home: const AppWrapper(enableFirebase: false),
                 debugShowCheckedModeBanner: false,
               ),
             );
@@ -255,306 +250,6 @@ String _simplifyErrorMessage(String error) {
   return error.length > 150 ? '${error.substring(0, 150)}...' : error;
 }
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
-  // Controllori animazione
-  late AnimationController _entryController;
-  late Animation<double> _fadeIn;
-  late Animation<double> _scaleIn;
-  late Animation<Color?> _colorShift;
-
-  late AnimationController _exitController;
-  late Animation<double> _fadeOut;
-  late Animation<double> _slideUp;
-
-  late AnimationController _messageController;
-  late Animation<double> _messageFade;
-
-  // Messaggi di caricamento
-  final List<String> _loadingMessages = [
-    'Stiamo preparando la tua avventura...',
-    'Caricamento destinazioni...',
-    'Accendiamo la bussola...',
-    'Controllo del meteo...',
-    'Impostazione del budget...',
-    'Verifica bagagli virtuali...',
-    'Pronto a partire!',
-  ];
-
-  late Timer _messageTimer;
-  int _currentMessageIndex = 0;
-  bool _isTransitioning = false;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Configurazione animazioni di entrata
-    _entryController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    
-    _fadeIn = CurvedAnimation(
-      parent: _entryController,
-      curve: Curves.easeInOutCubic,
-    );
-    
-    _scaleIn = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entryController,
-        curve: Curves.easeOutBack,
-      ),
-    );
-    
-    _colorShift = ColorTween(
-      begin: const Color(0xFF3EC8F6),
-      end: const Color(0xFF6D5DF6),
-    ).animate(_entryController);
-
-    // Configurazione animazioni di uscita
-    _exitController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    
-    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _exitController,
-        curve: Curves.easeInOut,
-      ),
-    );
-    
-    _slideUp = Tween<double>(begin: 0.0, end: -0.1).animate(
-      CurvedAnimation(
-        parent: _exitController,
-        curve: Curves.easeIn,
-      ),
-    );
-
-    // Animazione per i messaggi
-    _messageController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    
-    _messageFade = CurvedAnimation(
-      parent: _messageController,
-      curve: Curves.easeInOut,
-    );
-
-    // Avvia le animazioni di entrata
-    _entryController.forward();
-
-    // Ciclo dei messaggi di caricamento
-    _messageTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      _messageController.reverse().then((_) {
-        if (mounted && !_isTransitioning) {
-          setState(() {
-            _currentMessageIndex = (_currentMessageIndex + 1) % _loadingMessages.length;
-          });
-          _messageController.forward();
-        }
-      });
-    });
-
-    // Timer per la transizione alla prossima schermata
-    Future.delayed(const Duration(seconds: 3), () async {
-      if (mounted) {
-        setState(() => _isTransitioning = true);
-        await _exitController.forward();
-        _navigateToNextScreen();
-      }
-    });
-  }
-
-  void _navigateToNextScreen() {
-    final route = PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => const TravelSageApp(),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.0, 0.1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.fastOutSlowIn,
-            )),
-            child: child,
-          ),
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 1000),
-    );
-
-    Navigator.of(globalNavigatorKey.currentContext!).pushReplacement(route);
-  }
-
-  @override
-  void dispose() {
-    _entryController.dispose();
-    _exitController.dispose();
-    _messageController.dispose();
-    _messageTimer.cancel();
-    super.dispose();
-  }
-
-  double _calculateLogoSize(BuildContext context) {
-    final shortestSide = MediaQuery.of(context).size.shortestSide;
-    if (shortestSide > 600) return 250;
-    if (shortestSide > 400) return 180;
-    return 140;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final logoSize = _calculateLogoSize(context);
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    return AnimatedBuilder(
-      animation: Listenable.merge([_entryController, _exitController]),
-      builder: (context, child) {
-        return Scaffold(
-          body: Stack(
-            children: [
-              // Sfondo animato con gradient shift
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _colorShift.value!,
-                      const Color(0xFF6D5DF6),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              ),
-              
-              // Particelle animate
-              AnimatedBackground(
-                behaviour: RandomParticleBehaviour(
-                  options: ParticleOptions(
-                    baseColor: Colors.white.withOpacity(0.2),
-                    spawnOpacity: 0.0,
-                    opacityChangeRate: 0.25,
-                    minOpacity: 0.1,
-                    maxOpacity: 0.4,
-                    spawnMinSpeed: 30.0,
-                    spawnMaxSpeed: 70.0,
-                    particleCount: 40,
-                    spawnMaxRadius: 30.0,
-                    spawnMinRadius: 10.0,
-                  ),
-                ),
-                vsync: this,
-                child: Container(),
-              ),
-              
-              // Contenuto principale con animazioni
-              Transform.translate(
-                offset: Offset(0, _slideUp.value * screenHeight),
-                child: Opacity(
-                  opacity: _fadeOut.value,
-                  child: Center(
-                    child: FadeTransition(
-                      opacity: _fadeIn,
-                      child: ScaleTransition(
-                        scale: _scaleIn,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            // Logo
-                            ClipOval(
-                              child: Image.asset(
-                                'assets/Travelsage.png',
-                                width: logoSize,
-                                height: logoSize,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            
-                            const SizedBox(height: 40),
-                            
-                            // Barra di progresso
-                            SizedBox(
-                              width: logoSize * 0.4,
-                              child: LinearProgressIndicator(
-                                backgroundColor: Colors.white24,
-                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            
-                            const SizedBox(height: 20),
-                            
-                            // Animazione Lottie
-                            Lottie.asset(
-                              'assets/animations/splash_travel.json',
-                              width: 120,
-                              height: 120,
-                              repeat: true,
-                              frameRate: FrameRate(60),
-                            ),
-                            
-                            const SizedBox(height: 20),
-                            
-                            // Messaggio di caricamento con animazione
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 500),
-                              transitionBuilder: (child, animation) {
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, 0.1),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                _loadingMessages[_currentMessageIndex],
-                                key: ValueKey(_loadingMessages[_currentMessageIndex]),
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500,
-                                  shadows: [
-                                    Shadow(
-                                      blurRadius: 10,
-                                      color: Colors.black.withOpacity(0.3),
-                                      offset: const Offset(1, 1),
-                                    ),
-                                  ],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 List<Viaggio> viaggiBozza = [];
 
 class TravelSageApp extends StatelessWidget {
@@ -562,57 +257,34 @@ class TravelSageApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        Widget content;
         if (snapshot.connectionState == ConnectionState.waiting) {
-          content = const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         } else if (snapshot.hasData) {
-          content = const MainNavigation();
+          return const MainNavigation();
         } else {
-          content = LoginScreen(onLoginSuccess: () {});
+          return LoginScreen(onLoginSuccess: () {});
         }
-
-        // ✅ Unico MaterialApp, definito qui con tema
-        return MaterialApp(
-          title: 'TravelSage',
-          debugShowCheckedModeBanner: false,
-          theme: AppThemes.lightTheme,
-          darkTheme: AppThemes.darkTheme,
-          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-          home: content,
-        );
       },
     );
   }
 }
 
-class MainNavigation extends StatefulWidget {
+final selectedIndexProvider = StateProvider<int>((ref) => 0);
+
+class MainNavigation extends ConsumerWidget {
   const MainNavigation({super.key});
 
   @override
-  State<MainNavigation> createState() => _MainNavigationState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedIndex = ref.watch(selectedIndexProvider);
 
-class _MainNavigationState extends State<MainNavigation> {
-  int _selectedIndex = 0;
-
-  late final List<Widget> _pages;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _pages = [
+    final pages = [
       OrganizeTripPage(
         onViaggioCreato: (nuovoViaggio) {
-          setState(() {
-            viaggiBozza.add(nuovoViaggio);
-          });
+          // Aggiorna lo stato se serve
         },
       ),
       TripsPage(
@@ -622,9 +294,6 @@ class _MainNavigationState extends State<MainNavigation> {
             MaterialPageRoute(
               builder: (_) => OrganizeTripPage(
                 onViaggioCreato: (viaggio) {
-                  setState(() {
-                    viaggiBozza.add(viaggio);
-                  });
                   Navigator.pop(context);
                 },
               ),
@@ -632,44 +301,45 @@ class _MainNavigationState extends State<MainNavigation> {
           );
         },
       ),
-      DiaryPage(), // <-- nuova pagina aggiunta qui
+      DiaryPage(),
       const SettingsPage(),
     ];
-  }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+    void onItemTapped(int index) {
+      ref.read(selectedIndexProvider.notifier).state = index;
+    }
 
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      // Usa IndexedStack per mantenere le pagine montate
+      body: IndexedStack(
+        index: selectedIndex,
+        children: pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: selectedIndex,
         selectedItemColor: Colors.indigo,
-        onTap: _onItemTapped,
+        onTap: onItemTapped,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high), label: 'Travelbuilder'),
           BottomNavigationBarItem(icon: Icon(Icons.card_travel), label: 'Mytravels'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Journal'), // nuova voce
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Journal'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
-        type: BottomNavigationBarType.fixed, // per più di 3 elementi
+        type: BottomNavigationBarType.fixed,
       ),
     );
   }
 }
 
-class OrganizeTripPage extends StatefulWidget {
+
+
+class OrganizeTripPage extends ConsumerStatefulWidget {
   final Function(Viaggio) onViaggioCreato;
 
-  const OrganizeTripPage({super.key, required this.onViaggioCreato});
+  const OrganizeTripPage({Key? key, required this.onViaggioCreato}) : super(key: key);
 
   @override
-  State<OrganizeTripPage> createState() => _OrganizeTripPageState();
+  ConsumerState<OrganizeTripPage> createState() => _OrganizeTripPageState();
 }
 
 class _GenerazioneDialog extends StatelessWidget {
@@ -711,39 +381,16 @@ class _GenerazioneDialog extends StatelessWidget {
   }
 }
 
-class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProviderStateMixin {
+class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  String destination = '';
-  String departure = '';
-  DateTime? startDate;
-  DateTime? endDate;
-  String budget = '';
-  List<String> participants = [];
-  String profiloViaggiatore = '';
-  bool usaIA = true;
 
-  // Nuovi campi
-  int attivitaGiornaliere = 3;
-  double raggioKm = 10;
-  double etaMedia = 30;
-  String tipologiaViaggiatore = 'Backpacker';
-  String mezzoTrasporto = 'Aereo';
-
-  final interessiDisponibili = ['Cultura', 'Natura', 'Relax', 'Cibo', 'Sport', 'Storia', 'Arte','Nightlife'];
-  List<String> interessiSelezionati = []; // Nessuno selezionato di default
-
-  final tipiViaggiatori = ['Backpacker', 'Luxurytraveller', 'Familytraveller', 'Digitalnomad', 'Roadtripper'];
-  final mezziTrasporto = [
-  {'nome': 'Aereo', 'icona': RemixIcons.plane_fill},
-  {'nome': 'Auto', 'icona': RemixIcons.car_fill},
-  {'nome': 'Moto', 'icona': RemixIcons.motorbike_fill},
-  {'nome': 'Nave', 'icona': RemixIcons.ship_fill},
-  {'nome': 'Camper', 'icona': RemixIcons.bus_2_fill},
-  {'nome': 'Treno', 'icona': RemixIcons.train_fill},];
   final TextEditingController _participantController = TextEditingController();
   final TextEditingController _departureController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _budgetController = TextEditingController();
+
+  DateTime? startDate;
+  DateTime? endDate;
 
   late final TabController _tabController;
 
@@ -751,9 +398,10 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _departureController.text = departure;
-    _destinationController.text = destination;
-    _budgetController.text = budget;
+    // Inizializza i controller con testo vuoto o eventualmente con dati preesistenti
+    _departureController.text = '';
+    _destinationController.text = '';
+    _budgetController.text = '';
   }
 
   @override
@@ -764,37 +412,6 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
     _participantController.dispose();
     _tabController.dispose();
     super.dispose();
-  }
-
-
-  double responsiveIconSize(double screenWidth) {
-    if (screenWidth < 400) return 24;
-    if (screenWidth < 600) return 28;
-    return 32;
-  }
-
-  double responsiveChipFont(double screenWidth) {
-    if (screenWidth < 400) return 12;
-    return 14;
-  }
-
-  Future<void> _selectDate(bool isStart) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: isStart ? startDate ?? DateTime.now() : endDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
-
-    if (picked != null) {
-      setState(() {
-        if (isStart) {
-          startDate = picked;
-        } else {
-          endDate = picked;
-        }
-      });
-    }
   }
 
   DateTime _parseActivityTime(String timeString) {
@@ -808,203 +425,192 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   }
 
   Future<void> _submit() async {
-    if (_formKey.currentState!.validate() &&
-        startDate != null &&
-        endDate != null &&
-        participants.isNotEmpty) {
-      try {
-        if (usaIA) {
-          late BuildContext dialogContext;
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (BuildContext ctx) {
-              dialogContext = ctx;
-              return const _GenerazioneDialog();
-            },
-          );
+  final departure = _departureController.text.trim();
+  final destination = _destinationController.text.trim();
+  final budget = _budgetController.text.trim();
+  final startDate = ref.read(startDateProvider);
+  final endDate = ref.read(endDateProvider);
+  final usaIA = ref.read(usaIAProvider);
+  final etaMedia = ref.read(etaMediaProvider);
+  final tipologiaViaggiatore = ref.read(tipologiaViaggiatoreProvider);
+  final mezzoTrasporto = ref.read(mezzoTrasportoProvider);
+  final attivitaGiornaliere = ref.read(attivitaGiornaliereProvider);
+  final raggioKm = ref.read(raggioKmProvider);
+  final interessiSelezionati = ref.read(interessiProvider);
+  final participants = ref.read(partecipantiProvider);
 
-          final gemini = GeminiApi();
-          final rawResponse = await gemini.generaItinerario(
-            partenza: departure.trim(),
-            destinazione: destination.trim(),
-            dataInizio: startDate!,
-            dataFine: endDate!,
-            budget: budget.trim(),
-            interessi: List.from(interessiSelezionati),
-            mezzoTrasporto: mezzoTrasporto,
-            attivitaGiornaliere: attivitaGiornaliere,
-            raggioKm: raggioKm,
-            etaMedia: etaMedia,
-            tipologiaViaggiatore: tipologiaViaggiatore,
-            profilo: profiloViaggiatore,
-          );
+  if (_formKey.currentState!.validate() && startDate != null && endDate != null && participants.isNotEmpty) {
+    try {
+      if (usaIA) {
+        late BuildContext dialogContext;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext ctx) {
+            dialogContext = ctx;
+            return const _GenerazioneDialog();
+          },
+        );
 
-          print('🔍 Risposta raw Gemini:\n$rawResponse');
+        final gemini = GeminiApi();
+        final rawResponse = await gemini.generaItinerario(
+          partenza: departure,
+          destinazione: destination,
+          dataInizio: startDate,
+          dataFine: endDate,
+          budget: budget,
+          interessi: List.from(interessiSelezionati),
+          mezzoTrasporto: mezzoTrasporto,
+          attivitaGiornaliere: attivitaGiornaliere,
+          raggioKm: raggioKm,
+          etaMedia: etaMedia,
+          tipologiaViaggiatore: tipologiaViaggiatore,
+          profilo: '',
+        );
 
-          String estraiJson(String text) {
-            final start = text.indexOf('{');
-            final end = text.lastIndexOf('}');
-            if (start != -1 && end != -1 && end > start) {
-              return text.substring(start, end + 1);
-            }
-            throw FormatException('JSON non trovato nella risposta');
+        String estraiJson(String text) {
+          final start = text.indexOf('{');
+          final end = text.lastIndexOf('}');
+          if (start != -1 && end != -1 && end > start) {
+            return text.substring(start, end + 1);
           }
+          throw FormatException('JSON non trovato nella risposta');
+        }
 
-          late final String jsonString;
+        final String jsonString = estraiJson(rawResponse);
 
+        final Map<String, dynamic> decoded = jsonDecode(jsonString);
+        final Map<String, List<Attivita>> itinerario = {};
+
+        DateTime parseOrario(String? timeString, DateTime giorno) {
           try {
-            jsonString = estraiJson(rawResponse);
-          } catch (e) {
-            print('❌ Errore estrazione JSON: $e');
-            throw Exception('Risposta Gemini non contiene JSON valido');
-          }
-
-          print('🔍 JSON estratto:\n$jsonString');
-
-          final Map<String, dynamic> decoded = jsonDecode(jsonString);
-          final Map<String, List<Attivita>> itinerario = {};
-
-          DateTime parseOrario(String? timeString, DateTime giorno) {
-            try {
-              if (timeString == null || !timeString.contains(':')) {
-                return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
-              }
-              final parts = timeString.split(':');
-              return DateTime(
-                giorno.year,
-                giorno.month,
-                giorno.day,
-                int.parse(parts[0]),
-                int.parse(parts[1]),
-              );
-            } catch (e) {
-              print('❗️Errore parsing orario: $e, input: $timeString');
+            if (timeString == null || !timeString.contains(':')) {
               return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
             }
+            final parts = timeString.split(':');
+            return DateTime(giorno.year, giorno.month, giorno.day, int.parse(parts[0]), int.parse(parts[1]));
+          } catch (_) {
+            return DateTime(giorno.year, giorno.month, giorno.day, 0, 0);
           }
-
-          final giorniTotali = endDate!.difference(startDate!).inDays + 1;
-          final dateList = List.generate(
-              giorniTotali, (i) => startDate!.add(Duration(days: i)));
-
-          int index = 0;
-          decoded.forEach((key, attivitaList) {
-            final giorno =
-                index < dateList.length ? dateList[index] : dateList.last;
-            final keyGiorno = DateFormat('yyyy-MM-dd').format(giorno);
-
-            if (attivitaList is List) {
-              itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
-                return Attivita(
-                  id: const Uuid().v4(),
-                  titolo: a['titolo'] ?? 'Attività',
-                  descrizione: a['descrizione'] ?? '',
-                  orario: parseOrario(a['orario'], giorno),
-                  luogo: a['luogo'] ?? '',
-                  completata: false,
-                  categoria: a['categoria'] ?? 'attività',
-                  costoStimato: (a['costoStimato'] is num)
-                      ? (a['costoStimato'] as num).toDouble()
-                      : 0.0,
-                  generataDaIA: true,
-                );
-              }).toList();
-            }
-
-            index++;
-          });
-
-          final destinazioneFinale = destination.trim().isNotEmpty
-          ? destination.trim()
-          : 'Viaggio';
-
-          final nuovoViaggio = Viaggio(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            titolo: destination.trim(),
-            partenza: departure.trim(),
-            destinazione: destinazioneFinale,
-            dataInizio: startDate!,
-            dataFine: endDate!,
-            budget: budget.trim(),
-            partecipanti: List.from(participants),
-            mezzoTrasporto: mezzoTrasporto,
-            attivitaGiornaliere: attivitaGiornaliere,
-            raggioKm: raggioKm,
-            etaMedia: etaMedia,
-            tipologiaViaggiatore: tipologiaViaggiatore,
-            confermato: false,
-            spese: [],
-            archiviato: false,
-            note: null,
-            itinerario: itinerario,
-            interessi: List.from(interessiSelezionati),
-          );
-
-          await FirestoreService().saveViaggio(nuovoViaggio);
-          widget.onViaggioCreato(nuovoViaggio);
-          await Future.delayed(const Duration(seconds: 1));
-          Navigator.of(dialogContext).pop(); // Chiude il dialog Lottie
-
-          // Dopo la transizione, porti l’utente ai dettagli viaggio
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ViaggioCreatoPage(viaggio: nuovoViaggio),
-            ),
-          );
-        } else {
-          // 🎯 IA disattivata: viaggio vuoto
-          final nuovoViaggio = Viaggio(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            titolo: destination.trim(),
-            partenza: departure.trim(),
-            destinazione: destination.trim(),
-            dataInizio: startDate!,
-            dataFine: endDate!,
-            budget: budget.trim(),
-            partecipanti: List.from(participants),
-            mezzoTrasporto: mezzoTrasporto,
-            attivitaGiornaliere: attivitaGiornaliere,
-            raggioKm: raggioKm,
-            etaMedia: etaMedia,
-            tipologiaViaggiatore: tipologiaViaggiatore,
-            confermato: false,
-            spese: [],
-            archiviato: false,
-            note: null,
-            itinerario: {},
-            interessi: List.from(interessiSelezionati),
-          );
-
-          await FirestoreService().saveViaggio(nuovoViaggio);
-          widget.onViaggioCreato(nuovoViaggio);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Viaggio creato (manuale)')),
-          );
-
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1),
-            ),
-          );
         }
-      } catch (e, stackTrace) {
-        print('❌ Errore generazione viaggio: $e');
-        print(stackTrace);
+
+        final giorniTotali = endDate.difference(startDate).inDays + 1;
+        final dateList = List.generate(giorniTotali, (i) => startDate.add(Duration(days: i)));
+
+        int index = 0;
+        decoded.forEach((key, attivitaList) {
+          final giorno = index < dateList.length ? dateList[index] : dateList.last;
+          final keyGiorno = DateFormat('yyyy-MM-dd').format(giorno);
+
+          if (attivitaList is List) {
+            itinerario[keyGiorno] = attivitaList.map<Attivita>((a) {
+              return Attivita(
+                id: const Uuid().v4(),
+                titolo: a['titolo'] ?? 'Attività',
+                descrizione: a['descrizione'] ?? '',
+                orario: parseOrario(a['orario'], giorno),
+                luogo: a['luogo'] ?? '',
+                completata: false,
+                categoria: a['categoria'] ?? 'attività',
+                costoStimato: (a['costoStimato'] is num) ? (a['costoStimato'] as num).toDouble() : 0.0,
+                generataDaIA: true,
+              );
+            }).toList();
+          }
+          index++;
+        });
+
+        final destinazioneFinale = destination.isNotEmpty ? destination : 'Viaggio';
+
+        final nuovoViaggio = Viaggio(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          titolo: destination,
+          partenza: departure,
+          destinazione: destinazioneFinale,
+          dataInizio: startDate,
+          dataFine: endDate,
+          budget: budget,
+          partecipanti: List.from(participants),
+          mezzoTrasporto: mezzoTrasporto,
+          attivitaGiornaliere: attivitaGiornaliere,
+          raggioKm: raggioKm,
+          etaMedia: etaMedia,
+          tipologiaViaggiatore: tipologiaViaggiatore,
+          confermato: false,
+          spese: [],
+          archiviato: false,
+          note: null,
+          itinerario: itinerario,
+          interessi: List.from(interessiSelezionati),
+        );
+
+        await FirestoreService().saveViaggio(nuovoViaggio);
+        widget.onViaggioCreato(nuovoViaggio);
+
+        await Future.delayed(const Duration(seconds: 1));
+
+        if (!mounted) return;
+        Navigator.of(dialogContext).pop();
+
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => ViaggioCreatoPage(viaggio: nuovoViaggio)),
+        );
+      } else {
+        // IA disabilitata
+        final nuovoViaggio = Viaggio(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          titolo: destination,
+          partenza: departure,
+          destinazione: destination,
+          dataInizio: startDate,
+          dataFine: endDate,
+          budget: budget,
+          partecipanti: List.from(participants),
+          mezzoTrasporto: mezzoTrasporto,
+          attivitaGiornaliere: attivitaGiornaliere,
+          raggioKm: raggioKm,
+          etaMedia: etaMedia,
+          tipologiaViaggiatore: tipologiaViaggiatore,
+          confermato: false,
+          spese: [],
+          archiviato: false,
+          note: null,
+          itinerario: {},
+          interessi: List.from(interessiSelezionati),
+        );
+
+        await FirestoreService().saveViaggio(nuovoViaggio);
+        widget.onViaggioCreato(nuovoViaggio);
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore nella creazione del viaggio: $e')),
+          const SnackBar(content: Text('Viaggio creato (manuale)')),
+        );
+
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ViaggioDettaglioPage(viaggio: nuovoViaggio, index: -1)),
         );
       }
-    } else {
+    } catch (e, stackTrace) {
+      print('❌ Errore generazione viaggio: $e');
+      print(stackTrace);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completa tutti i campi')),
+        SnackBar(content: Text('Errore nella creazione del viaggio: $e')),
       );
     }
+  } else {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Completa tutti i campi')),
+    );
   }
-  
+}
+
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1060,341 +666,59 @@ class _OrganizeTripPageState extends State<OrganizeTripPage> with TickerProvider
   }
 
   Widget _buildViaggioTab(ThemeData theme, double screenWidth) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildTextField('Partenza', Icons.flight_takeoff, _departureController, onChanged: (val) => setState(() => departure = val)),
-        const SizedBox(height: 16),
-        _buildTextField('Destinazione', Icons.location_on_outlined, _destinationController,onChanged: (val) => setState(() => destination = val)),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(child: _buildDatePicker('Data Inizio', true, startDate)),
-            const SizedBox(width: 16),
-            Expanded(child: _buildDatePicker('Data Fine', false, endDate)),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildTextField('Budget per persona (€)', Icons.euro_outlined, _budgetController, isNumeric: true, onChanged: (val) => setState(() => budget = val)),
-        const SizedBox(height: 24),
-        Text('Mezzo di trasporto', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          alignment: WrapAlignment.start,
-          spacing: 16,
-          runSpacing: 12,
-          children: mezziTrasporto.map((mezzo) {
-            final nome = mezzo['nome'] as String;
-            final icona = mezzo['icona'] as IconData;
-            final selezionato = mezzoTrasporto == nome;
-            return Tooltip(
-              message: nome,
-              child: GestureDetector(
-                onTap: () => setState(() => mezzoTrasporto = nome),
-                child: CircleAvatar(
-                  radius: screenWidth < 400 ? 22 : 28,
-                  backgroundColor: selezionato ? Colors.indigo : Colors.grey[300],
-                  child: Icon(
-                    icona,
-                    size: screenWidth < 400 ? 20 : 28,
-                    color: selezionato ? Colors.white : Colors.black54,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 24),
-        _buildSlider('Attività giornaliere', attivitaGiornaliere.toDouble(), 1, 8,
-            (val) => setState(() => attivitaGiornaliere = val.round())),
-        const SizedBox(height: 8),
-        _buildSlider('Raggio massimo (km)', raggioKm, 0, 500,
-            (val) => setState(() => raggioKm = val), step: 15),
-        const SizedBox(height: 16),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Sfrutta l'assistente IA per generare l'itinerario",
-                style: theme.textTheme.bodyLarge,
-                softWrap: true,
-                overflow: TextOverflow.visible,
-              ),
-              const SizedBox(height: 4),
-              const Icon(Icons.smart_toy_sharp, color: Colors.indigo),
-            ],
-          ),
-          value: usaIA,
-          onChanged: (val) => setState(() => usaIA = val),
-        ),
-      ],
+    return ViaggioFormTab(
+      departureController: _departureController,
+      destinationController: _destinationController,
+      budgetController: _budgetController,
     );
   }
 
   Widget _buildViaggiatoreTab(ThemeData theme, double screenWidth) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSlider('Età media', etaMedia, 10, 100, (val) => setState(() => etaMedia = val)),
-        const SizedBox(height: 32),
-        Text('Tipologia Viaggiatore', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildViaggiatoreIcon(Icons.backpack, 'Backpacker', screenWidth),
-            _buildViaggiatoreIcon(RemixIcons.diamond_fill, 'Luxury', screenWidth),
-            _buildViaggiatoreIcon(Icons.family_restroom, 'Family', screenWidth),
-            _buildViaggiatoreIcon(RemixIcons.computer_fill, 'Digital Nomad', screenWidth),
-            _buildViaggiatoreIcon(RemixIcons.car_fill, 'Road Tripper', screenWidth),
-          ],
-        ),
-        const SizedBox(height: 32),
-        Text('Interessi', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: interessiDisponibili.map((interesse) => FilterChip(
-            label: Text(
-              interesse,
-              style: TextStyle(fontSize: responsiveChipFont(screenWidth)),
-            ),
-            selected: interessiSelezionati.contains(interesse),
-            onSelected: (selected) => setState(() {
-              if (selected) {
-                interessiSelezionati.add(interesse);
-              } else {
-                interessiSelezionati.remove(interesse);
-              }
-            }),
-          )).toList(),
-        ),
-        const SizedBox(height: 32),
-        Text('Partecipanti', style: theme.textTheme.titleMedium),
-        Wrap(
-          spacing: 8,
-          children: participants.map((p) => Chip(
-            label: Text(p),
-            onDeleted: () => setState(() => participants.remove(p)),
-          )).toList(),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _participantController,
-                decoration: const InputDecoration(labelText: 'Aggiungi partecipante'),
-                onSubmitted: (val) => _addParticipant(val),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _addParticipant(_participantController.text),
-            ),
-          ],
-        ),
-      ],
+    return ViaggiatoreFormTab(
+      participantController: _participantController,
+      screenWidth: screenWidth,
     );
-  }
-
-Widget _buildTextField(String label, IconData icon, TextEditingController controller,
-    {bool isNumeric = false, void Function(String)? onChanged}) {
-  return TextFormField(
-    controller: controller,
-    decoration: InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-    ),
-    keyboardType: isNumeric ? TextInputType.number : null,
-    validator: (val) => val == null || val.isEmpty ? 'Campo obbligatorio' : null,
-    onChanged: onChanged,
-  );
-}
-
-  Widget _buildDatePicker(String label, bool isStart, DateTime? selectedDate) {
-    return InkWell(
-      onTap: () => _selectDate(isStart),
-      borderRadius: BorderRadius.circular(16),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: const Icon(Icons.date_range_outlined),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-        child: Text(selectedDate == null
-            ? 'Seleziona'
-            : DateFormat('dd/MM/yyyy').format(selectedDate)),
-      ),
-    );
-  }
-
-  Widget _buildSlider(String label, double value, double min, double max,
-      Function(double) onChanged,
-      {int? step}) {
-    final divisions = step != null ? ((max - min) / step).round() : null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$label: ${value.round()}'),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: divisions,
-          label: value.round().toString(),
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildViaggiatoreIcon(IconData icon, String tipo, double screenWidth) {
-    final bool selected = tipologiaViaggiatore == tipo;
-    return Tooltip(
-      message: tipo,
-      child: GestureDetector(
-        onTap: () => setState(() => tipologiaViaggiatore = tipo),
-        child: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: selected ? Colors.indigo : Colors.grey[300],
-            boxShadow: selected
-                ? [BoxShadow(color: Colors.indigo.withOpacity(0.5), blurRadius: 8)]
-                : [],
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Icon(
-            icon,
-            color: selected ? Colors.white : Colors.black54,
-            size: responsiveIconSize(screenWidth),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _addParticipant(String name) {
-    if (name.trim().isNotEmpty) {
-      setState(() {
-        participants.add(name.trim());
-        _participantController.clear();
-      });
-    }
   }
 }
 
-class TripsPage extends StatefulWidget {
+class TripsPage extends ConsumerStatefulWidget {
   final VoidCallback onAddNewTrip;
 
   const TripsPage({super.key, required this.onAddNewTrip});
 
   @override
-  State<TripsPage> createState() => _TripsPageState();
+  ConsumerState<TripsPage> createState() => _TripsPageState();
 }
 
-class _TripsPageState extends State<TripsPage> {
-  List<Viaggio> viaggiBozza = [];
+class _TripsPageState extends ConsumerState<TripsPage> {
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+
+    // Carica i viaggi e archivia quelli scaduti
     Future.delayed(Duration.zero, () async {
-      await _caricaViaggi();
-      _archiviaViaggiScaduti();
+      try {
+        await ref.read(travelProvider.notifier).caricaViaggi();
+        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Errore caricamento viaggi: $e')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+          });
+        }
+      }
     });
   }
 
-  Future<void> _caricaViaggi() async {
-    try {
-      final viaggi = await FirestoreService().getViaggi();
-      setState(() {
-        viaggiBozza = viaggi;
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore caricamento viaggi: $e')),
-      );
-    }
-  }
-
-  double calcolaTotaleStimato(Map<String, List<Attivita>> itinerario) {
-  double totale = 0.0;
-    for (var attList in itinerario.values) {
-      for (var att in attList) {
-        totale += att.costoStimato ?? 0.0;
-      }
-    }
-    return totale;
-  }
-
-  void _archiviaViaggiScaduti() {
-    final oggi = DateTime.now();
-    final viaggiArchiviati = <String>[];
-
-    bool aggiorna = false;
-
-    for (int i = 0; i < viaggiBozza.length; i++) {
-      final viaggio = viaggiBozza[i];
-      final dataFine = viaggio.dataFine;
-
-      final nonArchiviato = !viaggio.archiviato;
-      final confermato = viaggio.confermato;
-      final scaduto = dataFine.isBefore(oggi);
-
-      if (confermato && nonArchiviato && scaduto) {
-        viaggiBozza[i] = viaggio.copyWith(archiviato: true);
-        TravelState.viaggiDaArchiviare.add({'destinazione': viaggio.destinazione}); // Cambiato per più leggibilità
-        aggiorna = true;
-      }
-    }
-
-    if (aggiorna) {
-      setState(() {});  // Aggiorna UI se cambiamenti
-    }
-
-    if (TravelState.viaggiDaArchiviare.isNotEmpty) {
-      final snackText = '${TravelState.viaggiDaArchiviare.length} viaggi archiviati automaticamente';
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(snackText),
-          backgroundColor: Colors.indigo,
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'DETTAGLI',
-            textColor: Colors.white,
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Viaggi Archiviati'),
-                  content: Text(TravelState.viaggiDaArchiviare.join('\n')),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
-  }
-
-  void _showDeleteDialog(BuildContext context, int index) {
+  void _showDeleteDialog(int index) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1407,11 +731,11 @@ class _TripsPageState extends State<TripsPage> {
           ),
           TextButton(
             onPressed: () async {
-              await FirestoreService().deleteViaggio(viaggiBozza[index].id);
-              setState(() {
-                viaggiBozza.removeAt(index);
-              });
-              Navigator.pop(context);
+              final viaggiNotifier = ref.read(travelProvider.notifier);
+              final viaggi = ref.read(travelProvider).viaggi;
+              final viaggioDaEliminare = viaggi[index];
+              await viaggiNotifier.rimuoviViaggio(viaggioDaEliminare.id);
+              if (mounted) Navigator.pop(context);
             },
             child: const Text('Elimina', style: TextStyle(color: Colors.red)),
           ),
@@ -1420,10 +744,21 @@ class _TripsPageState extends State<TripsPage> {
     );
   }
 
+  double calcolaTotaleStimato(Map<String, List<Attivita>> itinerario) {
+    double totale = 0.0;
+    for (var attList in itinerario.values) {
+      for (var att in attList) {
+        totale += att.costoStimato ?? 0.0;
+      }
+    }
+    return totale;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final viaggiNonArchiviati = viaggiBozza.where((v) => !v.archiviato).toList();
+    final viaggi = ref.watch(travelProvider).viaggi;
+    final viaggiNonArchiviati = viaggi.where((v) => !v.archiviato).toList();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1447,7 +782,7 @@ class _TripsPageState extends State<TripsPage> {
   Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
     final screenWidth = MediaQuery.of(context).size.width;
     final theme = Theme.of(context);
-    
+
     int cardsPerRow;
     double cardHeight;
 
@@ -1477,13 +812,13 @@ class _TripsPageState extends State<TripsPage> {
         ),
         itemBuilder: (context, index) {
           final viaggio = viaggiNonArchiviati[index];
-          final originalIndex = viaggiBozza.indexOf(viaggio);
+          print('Rendering card viaggio: id=${viaggio.id}, titolo="${viaggio.titolo}"');
           final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
           final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
               ? viaggio.titolo.trim()
               : viaggio.destinazione.trim().isNotEmpty
                   ? viaggio.destinazione.trim()
-              : 'Senza Titolo');
+                  : 'Senza Titolo');
           final totale = calcolaTotaleStimato(viaggio.itinerario);
           final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
           final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
@@ -1497,7 +832,7 @@ class _TripsPageState extends State<TripsPage> {
                   MaterialPageRoute(
                     builder: (_) => ViaggioDettaglioPage(
                       viaggio: viaggio,
-                      index: originalIndex,
+                      index: index,
                     ),
                   ),
                 );
@@ -1507,7 +842,7 @@ class _TripsPageState extends State<TripsPage> {
                   MaterialPageRoute(
                     builder: (_) => ModificaViaggioPage(
                       viaggio: viaggio,
-                      index: originalIndex,
+                      index: index,
                     ),
                   ),
                 ).then((_) => setState(() {}));
@@ -1561,15 +896,11 @@ class _TripsPageState extends State<TripsPage> {
                           ElevatedButton(
                             onPressed: () async {
                               final confermatoViaggio = viaggio.copyWith(confermato: true);
-                              await FirestoreService().saveViaggio(confermatoViaggio);
-                              setState(() {
-                                viaggiBozza[originalIndex] = confermatoViaggio;
-                              });
+                              await ref.read(travelProvider.notifier).salvaViaggio(confermatoViaggio);
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.indigoAccent,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -1578,7 +909,7 @@ class _TripsPageState extends State<TripsPage> {
                           ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          onPressed: () => _showDeleteDialog(context, originalIndex),
+                          onPressed: () => _showDeleteDialog(index),
                         ),
                       ],
                     ),

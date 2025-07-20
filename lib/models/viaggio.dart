@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'spesa.dart';
 
 class Viaggio {
@@ -173,38 +174,57 @@ class Viaggio {
 
   // Metodi per serializzazione
   factory Viaggio.fromJson(Map<String, dynamic> json) {
+    DateTime _parseDate(dynamic value) {
+    if (value == null) return DateTime.now(); // fallback
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.parse(value);
+    return DateTime.now(); // fallback
+    }
+
+    int _parseInt(dynamic value, int defaultValue) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? defaultValue;
+    return defaultValue;
+    }
+
+   double _parseDouble(dynamic value, double defaultValue) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? defaultValue;
+    return defaultValue;
+    }
+
     return Viaggio(
-      id: json['id'],
-      titolo: json['titolo'],
-      partenza: json['partenza'] ?? '', 
-      destinazione: json['destinazione'],
-      dataInizio: DateTime.parse(json['dataInizio']),
-      dataFine: DateTime.parse(json['dataFine']),
-      budget: json['budget'] ?? '',
-      partecipanti: List<String>.from(json['partecipanti'] ?? []),
-      confermato: json['confermato'] ?? false,
-      spese: (json['spese'] as List<dynamic>?)
-              ?.map((s) => Spesa.fromJson(s))
-              .toList() ??
-          [],
-      archiviato: json['archiviato'] ?? false,
-      note: json['note'],
-      interessi: List<String>.from(json['interessi'] ?? []), // 👈 nuovo campo
-      mezzoTrasporto: json['mezzoTrasporto'] ?? 'Aereo', // 👈 nuovo campo con valore di default
-      attivitaGiornaliere: json['attivitaGiornaliere'] ?? 3, // 👈 nuovo campo con valore di default
-      raggioKm: (json['raggioKm'] ?? 100.0).toDouble(), // 👈 nuovo campo con valore di default
-      etaMedia: (json['etaMedia'] ?? 30.0).toDouble(), // 👈 nuovo campo con valore di default
-      tipologiaViaggiatore: json['tipologiaViaggiatore'] ?? 'Backpacker', // 👈 nuovo campo con valore di default
-      itinerario: json['itinerario'] != null
-          ? (json['itinerario'] as Map<String, dynamic>).map(
-              (key, value) => MapEntry(
-                key,
-                (value as List).map((a) => Attivita.fromJson(a)).toList(),
-              ),
-            )
-          : null,
+    id: json['id']?.toString() ?? '',
+    titolo: json['titolo']?.toString() ?? '',
+    partenza: json['partenza']?.toString() ?? '',
+    destinazione: json['destinazione']?.toString() ?? '',
+    dataInizio: _parseDate(json['dataInizio']),
+    dataFine: _parseDate(json['dataFine']),
+    budget: json['budget']?.toString() ?? '',
+    partecipanti: json['partecipanti'] is List ? List<String>.from(json['partecipanti']) : [],
+    confermato: json['confermato'] ?? false,
+    spese: (json['spese'] as List<dynamic>?)?.map((s) => Spesa.fromJson(s)).toList() ?? [],
+    archiviato: json['archiviato'] ?? false,
+    note: json['note']?.toString(),
+    interessi: json['interessi'] is List ? List<String>.from(json['interessi']) : [],
+    mezzoTrasporto: json['mezzoTrasporto']?.toString() ?? 'Aereo',
+    attivitaGiornaliere: _parseInt(json['attivitaGiornaliere'], 3),
+    raggioKm: _parseDouble(json['raggioKm'], 100.0),
+    etaMedia: _parseDouble(json['etaMedia'], 30.0),
+    tipologiaViaggiatore: json['tipologiaViaggiatore']?.toString() ?? 'Backpacker',
+    itinerario: json['itinerario'] != null
+        ? (json['itinerario'] as Map<String, dynamic>).map(
+            (key, value) => MapEntry(
+              key,
+              (value as List).map((a) => Attivita.fromJson(a)).toList(),
+            ),
+          )
+        : {},
     );
   }
+
+
 
   Map<String, dynamic> toJson() {
     return {
@@ -212,8 +232,8 @@ class Viaggio {
       'titolo': titolo,
       'partenza': partenza,
       'destinazione': destinazione,
-      'dataInizio': dataInizio.toIso8601String(),
-      'dataFine': dataFine.toIso8601String(),
+      'dataInizio': Timestamp.fromDate(dataInizio),
+      'dataFine': Timestamp.fromDate(dataFine),
       'budget': budget,
       'partecipanti': partecipanti,
       'confermato': confermato,

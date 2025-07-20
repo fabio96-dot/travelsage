@@ -1,66 +1,111 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'theme_provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:travel_sage/providers/theme_provider.dart'; // contiene themeModeProvider
 
-class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+// ------------------ MODELLO PROFILO ------------------
 
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
+class UserProfileState {
+  final String username;
+  final File? profileImage;
+
+  UserProfileState({required this.username, this.profileImage});
+
+  UserProfileState copyWith({
+    String? username,
+    File? profileImage,
+  }) {
+    return UserProfileState(
+      username: username ?? this.username,
+      profileImage: profileImage ?? this.profileImage,
+    );
+  }
 }
 
-class _SettingsPageState extends State<SettingsPage> {
-  String? _username;
-  File? _profileImage;
-  final TextEditingController _usernameController = TextEditingController();
+// ------------------ NOTIFIER PROFILO ------------------
 
-  @override
-  void initState() {
-    super.initState();
+class UserProfileNotifier extends StateNotifier<UserProfileState> {
+  UserProfileNotifier() : super(UserProfileState(username: 'Utente')) {
     _loadUserData();
   }
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _username = prefs.getString('username') ?? 'Utente';
-      _usernameController.text = _username!;
-      final imagePath = prefs.getString('profileImagePath');
-      if (imagePath != null && imagePath.isNotEmpty) {
-        _profileImage = File(imagePath);
-      }
-    });
+    final savedUsername = prefs.getString('username') ?? 'Utente';
+    final imagePath = prefs.getString('profileImagePath');
+    File? imageFile;
+    if (imagePath != null && imagePath.isNotEmpty) {
+      imageFile = File(imagePath);
+    }
+    state = UserProfileState(username: savedUsername, profileImage: imageFile);
   }
 
-  Future<void> _saveUserData() async {
+  Future<void> setUsername(String newUsername) async {
+    state = state.copyWith(username: newUsername);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('username', _usernameController.text.trim());
-    if (_profileImage != null) {
-      await prefs.setString('profileImagePath', _profileImage!.path);
+    await prefs.setString('username', newUsername.trim());
+  }
+
+  Future<void> setProfileImage(File? newImage) async {
+    state = state.copyWith(profileImage: newImage);
+    final prefs = await SharedPreferences.getInstance();
+    if (newImage != null) {
+      await prefs.setString('profileImagePath', newImage.path);
+    } else {
+      await prefs.remove('profileImagePath');
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profilo salvato')),
-    );
+  }
+}
+
+final userProfileProvider =
+    StateNotifierProvider<UserProfileNotifier, UserProfileState>(
+  (ref) => UserProfileNotifier(),
+);
+
+// ------------------ PAGINA IMPOSTAZIONI ------------------
+
+class SettingsPage extends ConsumerStatefulWidget {
+  const SettingsPage({super.key});
+
+  @override
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  final TextEditingController _usernameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
-      setState(() {
-        _profileImage = File(picked.path);
-      });
+      ref.read(userProfileProvider.notifier).setProfileImage(File(picked.path));
     }
+  }
+
+  Future<void> _saveProfile() async {
+    final newUsername = _usernameController.text.trim();
+    await ref.read(userProfileProvider.notifier).setUsername(newUsername);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profilo salvato')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final userProfile = ref.watch(userProfileProvider);
+    final themeMode = ref.watch(themeModeProvider);
+    final isDark = themeMode == ThemeMode.dark;
+
+    _usernameController.text = userProfile.username;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Impostazioni')),
@@ -73,9 +118,10 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: _pickImage,
               child: CircleAvatar(
                 radius: 60,
-                backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
+                backgroundImage:
+                    userProfile.profileImage != null ? FileImage(userProfile.profileImage!) : null,
                 backgroundColor: Colors.grey[300],
-                child: _profileImage == null
+                child: userProfile.profileImage == null
                     ? const Icon(Icons.person, size: 60)
                     : null,
               ),
@@ -84,7 +130,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              _username ?? 'Utente',
+              userProfile.username,
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
@@ -97,21 +143,27 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
 
-          // Banner elegante per abbonamento con supporto dark mode
+          // ------------------ BANNER PREMIUM ------------------
           Container(
             margin: const EdgeInsets.only(top: 16),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? Colors.amber.shade900.withOpacity(0.3) : Colors.amber.shade100,
+              color: isDark
+                  ? Colors.amber.shade900.withOpacity(0.3)
+                  : Colors.amber.shade100,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isDark ? Colors.amber.shade700 : Colors.amber.shade300,
+                color:
+                    isDark ? Colors.amber.shade700 : Colors.amber.shade300,
               ),
             ),
             child: Row(
               children: [
                 Icon(Icons.workspace_premium_outlined,
-                    size: 36, color: isDark ? Colors.amber.shade300 : Colors.amber),
+                    size: 36,
+                    color: isDark
+                        ? Colors.amber.shade300
+                        : Colors.amber),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -122,7 +174,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: isDark ? Colors.amber.shade300 : Colors.black,
+                          color:
+                              isDark ? Colors.amber.shade300 : Colors.black,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -130,7 +183,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         'Sblocca funzionalità extra con TravelSage PRO',
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.amber.shade200 : Colors.black87,
+                          color: isDark
+                              ? Colors.amber.shade200
+                              : Colors.black87,
                         ),
                       ),
                     ],
@@ -138,13 +193,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark ? Colors.amber.shade700 : Colors.amber,
+                    backgroundColor:
+                        isDark ? Colors.amber.shade700 : Colors.amber,
                     foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Funzionalità abbonamenti in arrivo')),
+                      const SnackBar(
+                          content:
+                              Text('Funzionalità abbonamenti in arrivo')),
                     );
                   },
                   child: const Text('Scopri'),
@@ -157,7 +216,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ElevatedButton.icon(
             icon: const Icon(Icons.save),
             label: const Text('Salva Profilo'),
-            onPressed: _saveUserData,
+            onPressed: _saveProfile,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.indigo,
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -169,21 +228,27 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 24),
           const Divider(),
-          const Text('Preferenze', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Preferenze',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
 
-          // Modalità scura
+          // ------------------ TEMA SCURO ------------------
           SwitchListTile(
             title: const Text('Modalità Scura'),
-            value: themeProvider.isDarkMode,
-            onChanged: (val) => themeProvider.toggleTheme(),
+            value: themeMode == ThemeMode.dark,
+            onChanged: (val) {
+              ref.read(themeModeProvider.notifier).state =
+                  val ? ThemeMode.dark : ThemeMode.light;
+            },
             secondary: Icon(
-              themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+              themeMode == ThemeMode.dark
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
               color: Colors.indigo,
             ),
           ),
 
-          // Lingua (mock)
+          // ------------------ LINGUA (Mock) ------------------
           ListTile(
             leading: const Icon(Icons.language),
             title: const Text('Lingua'),
@@ -191,12 +256,14 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Selezione lingua: funzione da implementare')),
+                const SnackBar(
+                    content:
+                        Text('Selezione lingua: funzione da implementare')),
               );
             },
           ),
 
-          // Tema colore (mock)
+          // ------------------ TEMA COLORE (Mock) ------------------
           ListTile(
             leading: const Icon(Icons.palette),
             title: const Text('Tema Colore'),
@@ -204,45 +271,53 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cambio colore: funzione da implementare')),
+                const SnackBar(
+                    content:
+                        Text('Cambio colore: funzione da implementare')),
               );
             },
           ),
 
           const SizedBox(height: 24),
           const Divider(),
-          const Text('Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Account',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
 
-          // Cambio password (mock)
+          // ------------------ CAMBIA PASSWORD (Mock) ------------------
           ListTile(
             leading: const Icon(Icons.lock_outline),
             title: const Text('Cambia password'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cambio password: funzione da implementare')),
+                const SnackBar(
+                    content:
+                        Text('Cambio password: funzione da implementare')),
               );
             },
           ),
 
-          // Elimina account (mock)
+          // ------------------ ELIMINA ACCOUNT (Mock) ------------------
           ListTile(
             leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
             title: const Text('Elimina Account'),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Eliminazione account: funzione da implementare')),
+                const SnackBar(
+                    content: Text(
+                        'Eliminazione account: funzione da implementare')),
               );
             },
           ),
 
           const SizedBox(height: 24),
           const Divider(),
-          const Text('App', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('App',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
 
-          // Info App (mock)
+          // ------------------ INFO APP ------------------
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Info App'),
@@ -257,7 +332,7 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
 
-          // Logout
+          // ------------------ LOGOUT ------------------
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Esci'),

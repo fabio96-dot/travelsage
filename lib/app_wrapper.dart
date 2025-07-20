@@ -9,6 +9,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'config/web_config.dart' if (dart.library.io) 'config/mobile_config.dart';
 import 'pages/theme_provider.dart';
 import 'firebase_options.dart';
+import 'package:travel_sage/providers/splash_screen_provider.dart';
 import 'main.dart'; // per SplashScreen e TravelSageApp
 
 class AppWrapper extends StatefulWidget {
@@ -46,9 +47,10 @@ class _AppWrapperState extends State<AppWrapper> {
 
       // 3. Caricamento risorse aggiuntive
       await _loadAdditionalResources();
-
     } catch (e, stack) {
       _handleInitializationError(e, stack);
+      // Rethrow per fermare FutureBuilder (opzionale)
+      throw e;
     }
   }
 
@@ -59,38 +61,39 @@ class _AppWrapperState extends State<AppWrapper> {
     ]);
   }
 
-Future<void> _initializeFirebaseServices() async {
-  try {
-    // MODIFICA QUI: Verifica più robusta dell'inizializzazione
-    if (widget.enableFirebase && 
-        (Firebase.apps.isEmpty || !Firebase.apps.any((app) => app.name == '[DEFAULT]'))) {
-      
-      debugPrint("⚙️ Tentativo di inizializzazione Firebase da AppWrapper");
-      
-      await Firebase.initializeApp(
-        options: kIsWeb 
-            ? WebConfig.firebaseOptions 
-            : DefaultFirebaseOptions.currentPlatform,
-        name: 'Secondary' // Usa un nome diverso per questa inizializzazione
-      );
+  Future<void> _initializeFirebaseServices() async {
+    try {
+      // Inizializza Firebase solo se non già presente con app [DEFAULT]
+      if (Firebase.apps.isEmpty || !Firebase.apps.any((app) => app.name == '[DEFAULT]')) {
+        debugPrint("⚙️ Inizializzazione Firebase [DEFAULT] da AppWrapper");
 
-      if (!kIsWeb) {
-        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+        await Firebase.initializeApp(
+          options: kIsWeb
+              ? WebConfig.firebaseOptions
+              : DefaultFirebaseOptions.currentPlatform,
+          name: '[DEFAULT]', // importante usare sempre [DEFAULT]
+        );
+
+        if (!kIsWeb) {
+          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+          FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+        }
+      } else {
+        debugPrint("ℹ️ Firebase [DEFAULT] già inizializzato, salto init");
       }
-    } else {
-      debugPrint("ℹ️ Firebase già inizializzato, salto l'inizializzazione");
+    } catch (e, stack) {
+      debugPrint("⚠️ Errore inizializzazione Firebase: $e");
+      // Non bloccare l’app, ma segnala
+      if (!kIsWeb && Firebase.apps.isNotEmpty) {
+        FirebaseCrashlytics.instance.recordError(e, stack);
+      }
     }
-  } catch (e, stack) {
-    debugPrint("⚠️ Errore nell'inizializzazione secondaria di Firebase: $e");
-    // Non blocchiamo l'app per questo errore
   }
-}
 
   Future<void> _loadAdditionalResources() async {
     await Future.wait([
       GoogleFonts.pendingFonts([GoogleFonts.poppins(), GoogleFonts.roboto()]),
-      Future.delayed(const Duration(milliseconds: 800)), // Tempo minimo per splash screen
+      Future.delayed(const Duration(milliseconds: 800)), // Tempo minimo splash
     ]);
   }
 
@@ -141,12 +144,18 @@ Future<void> _initializeFirebaseServices() async {
         if (snapshot.connectionState != ConnectionState.done) {
           return const SplashScreen();
         }
+        if (snapshot.hasError) {
+          // fallback: mostra errore anche qui (opzionale)
+          return _buildErrorScreen(message: snapshot.error.toString());
+        }
         return const TravelSageApp();
       },
     );
   }
 
-  Widget _buildErrorScreen() {
+  Widget _buildErrorScreen({String? message}) {
+    final errorMsg = message ?? _errorMessage ?? 'Errore sconosciuto';
+
     return Scaffold(
       body: Center(
         child: Padding(
@@ -165,7 +174,7 @@ Future<void> _initializeFirebaseServices() async {
               ),
               const SizedBox(height: 15),
               Text(
-                _errorMessage ?? 'Errore sconosciuto',
+                errorMsg,
                 style: GoogleFonts.roboto(
                   color: Colors.red[700],
                   fontSize: 16,
