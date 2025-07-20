@@ -1,91 +1,149 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:travel_sage/models/viaggio.dart';
 import '../../services/firestore_service.dart';
 
 class TravelState {
   final List<Viaggio> viaggi;
-  TravelState({this.viaggi = const []});
+  final bool isLoading;
+  final String? errorMessage;
 
-  TravelState copyWith({List<Viaggio>? viaggi}) {
-    return TravelState(viaggi: viaggi ?? this.viaggi);
+  TravelState({
+    this.viaggi = const [],
+    this.isLoading = false,
+    this.errorMessage,
+  });
+
+  TravelState copyWith({
+    List<Viaggio>? viaggi,
+    bool? isLoading,
+    String? errorMessage,
+  }) {
+    return TravelState(
+      viaggi: viaggi ?? this.viaggi,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: errorMessage ?? this.errorMessage,
+    );
   }
 }
 
 class TravelNotifier extends StateNotifier<TravelState> {
   final FirestoreService _firestoreService;
+  StreamSubscription<List<Viaggio>>? _viaggiSubscription;
+  bool _disposed = false; // Aggiungiamo un flag per tracciare lo stato
 
   TravelNotifier(this._firestoreService) : super(TravelState()) {
-    caricaViaggi();
+    _init();
   }
 
-  /// Carica tutti i viaggi dell'utente autenticato e aggiorna lo stato
+  Future<void> _init() async {
+    await caricaViaggi();
+    _setupFirestoreListener();
+  }
+
+  void _setupFirestoreListener() {
+    _viaggiSubscription?.cancel();
+    
+    try {
+      _viaggiSubscription = _firestoreService.getViaggiStream().listen(
+        (viaggi) {
+          if (!_disposed) { // Usiamo il nostro flag invece di isClosed
+            state = state.copyWith(viaggi: viaggi, errorMessage: null);
+          }
+        },
+        onError: (error) {
+          if (!_disposed) {
+            state = state.copyWith(
+              errorMessage: 'Errore aggiornamento in tempo reale: $error',
+            );
+          }
+        },
+      );
+    } catch (e) {
+      print('❌ Errore inizializzazione listener: $e');
+    }
+  }
+
   Future<void> caricaViaggi() async {
     try {
+      state = state.copyWith(isLoading: true, errorMessage: null);
       final viaggi = await _firestoreService.getViaggi();
-      print('📦 Documenti ricevuti: ${viaggi.length}');
-      for (var viaggio in viaggi) {
-        print('📌 Viaggio: ${viaggio.titolo} dal ${viaggio.dataInizio}');
+      if (!_disposed) {
+        state = state.copyWith(viaggi: viaggi, isLoading: false);
       }
-      state = state.copyWith(viaggi: viaggi);
-    } catch (e, stackTrace) {
-      print('❌ Errore durante il caricamento dei viaggi: $e');
-      print(stackTrace);
+    } catch (e) {
+      if (!_disposed) {
+        state = state.copyWith(
+          isLoading: false,
+          errorMessage: 'Errore durante il caricamento: ${e.toString()}',
+        );
+      }
+      rethrow;
     }
   }
 
-  /// Salva un viaggio (nuovo o aggiornamento)
+  void aggiungiViaggioTemporaneo(Viaggio viaggio) {
+    if (_disposed || state.viaggi.any((v) => v.id == viaggio.id)) return;
+    state = state.copyWith(viaggi: [...state.viaggi, viaggio]);
+  }
+
   Future<void> salvaViaggio(Viaggio viaggio) async {
     try {
+      if (!state.viaggi.any((v) => v.id == viaggio.id)) {
+        aggiungiViaggioTemporaneo(viaggio);
+      }
       await _firestoreService.saveViaggio(viaggio);
-      final listaAggiornata = [
-        for (final v in state.viaggi)
-          if (v.id != viaggio.id) v,
-        viaggio,
-      ];
-      state = state.copyWith(viaggi: listaAggiornata);
     } catch (e) {
-      print('❌ Errore salvataggio viaggio: $e');
-      throw Exception('Errore salvataggio viaggio: $e');
+      await caricaViaggi();
+      rethrow;
     }
   }
 
-  /// Rimuove viaggio da Firestore e stato locale
   Future<void> rimuoviViaggio(String id) async {
     try {
+      state = state.copyWith(
+        viaggi: state.viaggi.where((v) => v.id != id).toList(),
+      );
       await _firestoreService.deleteViaggio(id);
-      final listaAggiornata = state.viaggi.where((v) => v.id != id).toList();
-      state = state.copyWith(viaggi: listaAggiornata);
     } catch (e) {
-      print('❌ Errore eliminazione viaggio: $e');
-      throw Exception('Errore eliminazione viaggio: $e');
+      await caricaViaggi();
+      rethrow;
     }
   }
 
-  /// Archivia tutti i viaggi confermati e scaduti (dataFine < oggi)
   Future<void> archiviaViaggiScaduti() async {
-    final oggi = DateTime.now();
-    final aggiornati = <Viaggio>[];
-
-    for (final v in state.viaggi) {
-      if (v.confermato && !v.archiviato && v.dataFine.isBefore(oggi)) {
-        final viaggModificato = v.copyWith(archiviato: true);
-        await _firestoreService.saveViaggio(viaggModificato);
-        aggiornati.add(viaggModificato);
-      } else {
-        aggiornati.add(v);
+    try {
+      state = state.copyWith(isLoading: true);
+      final oggi = DateTime.now();
+      
+      for (final v in state.viaggi) {
+        if (v.confermato && !v.archiviato && v.dataFine.isBefore(oggi)) {
+          await _firestoreService.saveViaggio(v.copyWith(archiviato: true));
+        }
       }
+      
+      if (!_disposed) {
+        state = state.copyWith(isLoading: false);
+      }
+    } catch (e) {
+      if (!_disposed) {
+        state = state.copyWith(isLoading: false);
+      }
+      rethrow;
     }
+  }
 
-    state = state.copyWith(viaggi: aggiornati);
+  @override
+  void dispose() {
+    _disposed = true; // Impostiamo il flag a true prima di cancellare
+    _viaggiSubscription?.cancel();
+    super.dispose();
   }
 }
 
-// Provider per TravelNotifier, passando FirestoreService con userId dinamico
 final travelProvider = StateNotifierProvider<TravelNotifier, TravelState>((ref) {
-  final firestoreService = FirestoreService();
-  return TravelNotifier(firestoreService);
+  return TravelNotifier(FirestoreService());
 });
-
 
 
 

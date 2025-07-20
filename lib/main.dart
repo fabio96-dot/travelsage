@@ -701,8 +701,6 @@ class TripsPage extends ConsumerStatefulWidget {
 }
 
 class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserver {
-  bool _loading = true;
-
   @override
   void initState() {
     super.initState();
@@ -720,18 +718,12 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
           SnackBar(content: Text('Errore caricamento viaggi: $e')),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && mounted) {
       ref.read(travelProvider.notifier).caricaViaggi();
     }
   }
@@ -742,7 +734,7 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
     super.dispose();
   }
 
-  void _showDeleteDialog(int index) {
+  void _showDeleteDialog(Viaggio viaggio) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -755,11 +747,16 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
           ),
           TextButton(
             onPressed: () async {
-              final viaggiNotifier = ref.read(travelProvider.notifier);
-              final viaggi = ref.read(travelProvider).viaggi;
-              final viaggioDaEliminare = viaggi[index];
-              await viaggiNotifier.rimuoviViaggio(viaggioDaEliminare.id);
-              if (mounted) Navigator.pop(context);
+              try {
+                await ref.read(travelProvider.notifier).rimuoviViaggio(viaggio.id);
+                if (mounted) Navigator.pop(context);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Errore durante l\'eliminazione: $e')),
+                  );
+                }
+              }
             },
             child: const Text('Elimina', style: TextStyle(color: Colors.red)),
           ),
@@ -781,19 +778,19 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final viaggi = ref.watch(travelProvider).viaggi;
-    final viaggiNonArchiviati = viaggi.where((v) => !v.archiviato).toList();
+    final travelState = ref.watch(travelProvider);
+    final viaggiNonArchiviati = travelState.viaggi.where((v) => !v.archiviato).toList();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Viaggi salvati'),
       ),
-      body: _loading
+      body: travelState.isLoading
           ? const Center(child: CircularProgressIndicator())
-          : (viaggiNonArchiviati.isEmpty
+          : viaggiNonArchiviati.isEmpty
               ? const SkeletonLoader()
-              : _buildViaggiGrid(context, viaggiNonArchiviati)),
+              : _buildViaggiGrid(context, viaggiNonArchiviati),
       floatingActionButton: FloatingActionButton(
         onPressed: widget.onAddNewTrip,
         backgroundColor: Colors.indigo,
@@ -824,180 +821,173 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
       cardHeight = 160;
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: GridView.builder(
-        itemCount: viaggiNonArchiviati.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cardsPerRow,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
-        ),
-        itemBuilder: (context, index) {
-          final viaggio = viaggiNonArchiviati[index];
-          final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
-          final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
-              ? viaggio.titolo.trim()
-              : viaggio.destinazione.trim().isNotEmpty
-                  ? viaggio.destinazione.trim()
-                  : 'Senza Titolo');
-          final totale = calcolaTotaleStimato(viaggio.itinerario);
-          final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
-          final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
+    return RefreshIndicator(
+      onRefresh: () => ref.read(travelProvider.notifier).caricaViaggi(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: GridView.builder(
+          itemCount: viaggiNonArchiviati.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cardsPerRow,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
+          ),
+          itemBuilder: (context, index) {
+            final viaggio = viaggiNonArchiviati[index];
+            final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
+            final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
+                ? viaggio.titolo.trim()
+                : viaggio.destinazione.trim().isNotEmpty
+                    ? viaggio.destinazione.trim()
+                    : 'Senza Titolo');
+            final totale = calcolaTotaleStimato(viaggio.itinerario);
+            final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
+            final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
 
-          return InkWell(
-            key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
-            onTap: () {
-              if (viaggio.confermato) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ViaggioDettaglioPage(
-                    viaggio: viaggio,
-                    index: index,
-                  ),
-                ),
-              ).then((_) {
-                ref.read(travelProvider.notifier).caricaViaggi(); // 🔁 aggiorna lista
-              });
-              } else {
+            return InkWell(
+              key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
+              onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ModificaViaggioPage(
-                      viaggio: viaggio,
-                      index: index,
+                    builder: (_) => viaggio.confermato
+                        ? ViaggioDettaglioPage(viaggio: viaggio, index: index)
+                        : ModificaViaggioPage(viaggio: viaggio, index: index),
+                  ),
+                );
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  image: DecorationImage(
+                    image: NetworkImage(imageUrl),
+                    fit: BoxFit.cover,
+                    colorFilter: ColorFilter.mode(
+                      Colors.black.withOpacity(0.5),
+                      BlendMode.darken,
                     ),
                   ),
-                ).then((_) {
-                  // Dopo la modifica, ricarica i viaggi
-                  ref.read(travelProvider.notifier).caricaViaggi();
-                });
-              }
-            },
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                image: DecorationImage(
-                  image: NetworkImage(imageUrl),
-                  fit: BoxFit.cover,
-                  colorFilter: ColorFilter.mode(
-                    Colors.black.withOpacity(0.5),
-                    BlendMode.darken,
-                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.3),
+                      blurRadius: 5,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.3),
-                    blurRadius: 5,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          viaggio.confermato ? Icons.check_circle : Icons.edit_note,
-                          color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            titoloDaMostrare,
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            viaggio.confermato ? Icons.check_circle : Icons.edit_note,
+                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
+                            size: 28,
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              titoloDaMostrare,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (!viaggio.confermato)
+                            ElevatedButton(
+                              onPressed: () async {
+                                try {
+                                  await ref.read(travelProvider.notifier)
+                                    .salvaViaggio(viaggio.copyWith(confermato: true));
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Errore durante la conferma: $e')),
+                                    );
+                                  }
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.indigoAccent,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: const Text('Conferma'),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () => _showDeleteDialog(viaggio),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.white70,
+                            ),
+                      ),
+                      Tooltip(
+                        message: haSuperatoBudget
+                            ? "Hai sforato il budget previsto"
+                            : "Spesa stimata entro il budget",
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        if (!viaggio.confermato)
-                          ElevatedButton(
-                            onPressed: () async {
-                              final confermatoViaggio = viaggio.copyWith(confermato: true);
-                              await ref.read(travelProvider.notifier).salvaViaggio(confermatoViaggio);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigoAccent,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                        textStyle: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.euro, size: 18, color: Colors.white70),
+                            const SizedBox(width: 6),
+                            Text(
+                              "Preventivo: €${totale.toStringAsFixed(2)}",
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: colorePreventivo,
                               ),
                             ),
-                            child: const Text('Conferma'),
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          onPressed: () => _showDeleteDialog(index),
+                          ],
                         ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.white70,
-                          ),
-                    ),
-                    Tooltip(
-                      message: haSuperatoBudget
-                          ? "Hai sforato il budget previsto"
-                          : "Spesa stimata entro il budget",
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(8),
                       ),
-                      textStyle: TextStyle(
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      child: Row(
+                      const SizedBox(height: 6),
+                      Row(
                         children: [
-                          const Icon(Icons.euro, size: 18, color: Colors.white70),
+                          Icon(
+                            viaggio.confermato ? Icons.lock_open_rounded : Icons.edit,
+                            size: 16,
+                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
+                          ),
                           const SizedBox(width: 6),
                           Text(
-                            "Preventivo: €${totale.toStringAsFixed(2)}",
+                            viaggio.confermato ? 'Viaggio confermato' : 'Bozza in lavorazione',
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: colorePreventivo,
+                              fontSize: 13,
+                              color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(
-                          viaggio.confermato ? Icons.lock_open_rounded : Icons.edit,
-                          size: 16,
-                          color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          viaggio.confermato ? 'Viaggio confermato' : 'Bozza in lavorazione',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
