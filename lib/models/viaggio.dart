@@ -269,6 +269,7 @@ class Viaggio {
   }
 }
 
+
 class Attivita {
   final String id;
   String titolo;
@@ -276,9 +277,16 @@ class Attivita {
   DateTime orario;
   String? luogo;
   bool completata;
-  bool generataDaIA; // <-- ✅ nuovo campo
+  bool generataDaIA;
   String categoria; // attività, trasporto, pernottamento
   final double? costoStimato;
+
+  // Nuovi campi
+  String? emozioni;      // pensieri / emozioni dell'utente
+  String? immaginePath;  // percorso o URL immagine associata
+
+  // Nuovo campo giorno in formato stringa yyyy-MM-dd
+  late final String giorno;
 
   Attivita({
     required this.id,
@@ -287,10 +295,15 @@ class Attivita {
     required this.orario,
     this.luogo,
     this.completata = false,
-    this.generataDaIA = false, // <-- default false
-    this.categoria = 'attivita', // default
+    this.generataDaIA = false,
+    this.categoria = 'attivita',
     this.costoStimato = 0.0,
-  });
+    this.emozioni,
+    this.immaginePath,
+  }) {
+    // Imposta giorno ogni volta che crei l'oggetto
+    giorno = DateFormat('yyyy-MM-dd').format(orario);
+  }
 
   factory Attivita.fromJson(Map<String, dynamic> json) {
     final dynamic orarioRaw = json['orario'];
@@ -301,10 +314,10 @@ class Attivita {
     } else if (orarioRaw is String) {
       orarioParsed = DateTime.tryParse(orarioRaw) ?? DateTime.now();
     } else {
-      orarioParsed = DateTime.now(); // fallback sicuro
+      orarioParsed = DateTime.now();
     }
 
-    return Attivita(
+    final attivita = Attivita(
       id: json['id'] ?? '',
       titolo: json['titolo'] ?? '',
       descrizione: json['descrizione'] ?? '',
@@ -314,7 +327,11 @@ class Attivita {
       generataDaIA: json['generataDaIA'] ?? false,
       categoria: json['categoria'] ?? 'attivita',
       costoStimato: (json['costoStimato'] ?? 0).toDouble(),
+      emozioni: json['emozioni'],
+      immaginePath: json['immaginePath'],
     );
+
+    return attivita;
   }
 
   Map<String, dynamic> toJson() {
@@ -325,12 +342,16 @@ class Attivita {
       'orario': Timestamp.fromDate(orario),
       'luogo': luogo,
       'completata': completata,
-      'generataDaIA': generataDaIA, // <-- salva su Firestore
+      'generataDaIA': generataDaIA,
       'categoria': categoria,
       'costoStimato': costoStimato,
+      'emozioni': emozioni,
+      'immaginePath': immaginePath,
+      'giorno': giorno,  // <-- salva il campo giorno in Firestore
     };
   }
-    Attivita copyWith({
+
+  Attivita copyWith({
     String? titolo,
     String? descrizione,
     DateTime? orario,
@@ -339,17 +360,23 @@ class Attivita {
     bool? generataDaIA,
     String? categoria,
     double? costoStimato,
-    }) {
+    String? emozioni,
+    String? immaginePath,
+  }) {
+    final newOrario = orario ?? this.orario;
     return Attivita(
       id: id,
       titolo: titolo ?? this.titolo,
       descrizione: descrizione ?? this.descrizione,
-      orario: orario ?? this.orario,
+      orario: newOrario,
       luogo: luogo ?? this.luogo,
       completata: completata ?? this.completata,
       generataDaIA: generataDaIA ?? this.generataDaIA,
       categoria: categoria ?? this.categoria,
       costoStimato: costoStimato ?? this.costoStimato,
+      emozioni: emozioni ?? this.emozioni,
+      immaginePath: immaginePath ?? this.immaginePath,
     );
   }
 }
+
