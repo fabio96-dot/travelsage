@@ -600,8 +600,7 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
         );
 
         if (result == true && mounted) {
-          // Ricarica i viaggi perché l'utente è tornato da viaggio dettagliato
-          ref.read(travelProvider.notifier).caricaViaggi();
+          Future.microtask(() => ref.read(travelProvider.notifier).caricaViaggi());
         }
       }
     } catch (e, stackTrace) {
@@ -710,8 +709,11 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
 
   Future<void> _caricaViaggiIniziali() async {
     try {
-      await ref.read(travelProvider.notifier).caricaViaggi();
-      await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+      // Ritarda l'esecuzione subito dopo la build
+      await Future.microtask(() async {
+        await ref.read(travelProvider.notifier).caricaViaggi();
+        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -724,7 +726,10 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      ref.read(travelProvider.notifier).caricaViaggi();
+      // Posticipa la chiamata
+      Future.microtask(() {
+        ref.read(travelProvider.notifier).caricaViaggi();
+      });
     }
   }
 
@@ -747,9 +752,9 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
           ),
           TextButton(
             onPressed: () async {
+              Navigator.pop(context);  // Chiudi subito il dialog
               try {
-                await ref.read(travelProvider.notifier).rimuoviViaggio(viaggio.id);
-                if (mounted) Navigator.pop(context);
+                await Future.microtask(() => ref.read(travelProvider.notifier).rimuoviViaggio(viaggio.id));
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -905,13 +910,13 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
                             ElevatedButton(
                               onPressed: () async {
                                 try {
-                                  await ref.read(travelProvider.notifier)
-                                    .salvaViaggio(viaggio.copyWith(confermato: true));
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Errore durante la conferma: $e')),
-                                    );
+                                    await ref.read(travelProvider.notifier)
+                                      .salvaViaggio(viaggio.copyWith(confermato: true));
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Errore durante la conferma: $e')),
+                                      );
                                   }
                                 }
                               },
