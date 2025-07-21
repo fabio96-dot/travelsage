@@ -235,15 +235,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // ------------------ TEMA SCURO ------------------
           SwitchListTile(
             title: const Text('Modalità Scura'),
-            value: themeMode == ThemeMode.dark,
+            value: themeMode == ThemeMode.dark ||
+                (themeMode == ThemeMode.system && MediaQuery.platformBrightnessOf(context) == Brightness.dark),
             onChanged: (val) {
               ref.read(themeModeProvider.notifier).state =
                   val ? ThemeMode.dark : ThemeMode.light;
             },
             secondary: Icon(
-              themeMode == ThemeMode.dark
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
+              (themeMode == ThemeMode.dark ||
+              (themeMode == ThemeMode.system && MediaQuery.platformBrightnessOf(context) == Brightness.dark))
+                ? Icons.dark_mode
+                : Icons.light_mode,
               color: Colors.indigo,
             ),
           ),
