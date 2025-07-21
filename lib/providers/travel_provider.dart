@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:travel_sage/models/viaggio.dart';
 import '../../services/firestore_service.dart';
 
+
 class TravelState {
   final List<Viaggio> viaggi;
   final bool isLoading;
@@ -140,7 +141,7 @@ class TravelNotifier extends StateNotifier<TravelState> {
     super.dispose();
   }
 }
-
+/// Provider per il notifier dei viaggi
 final travelProvider = StateNotifierProvider<TravelNotifier, TravelState>((ref) {
   return TravelNotifier(FirestoreService());
 });

@@ -2,6 +2,7 @@ import '../../models/viaggio.dart';
 
 final mockViaggi = [
   Viaggio(
+    userId: 'user123',
     id:"1",
     titolo: 'Viaggio a Tokyo',
     partenza: 'Roma',
@@ -14,6 +15,7 @@ final mockViaggi = [
     archiviato: true,
   ),
   Viaggio(
+    userId: 'user456',
     id:"2",
     partenza: 'Milano',
     titolo: 'Viaggio a Barcellona',

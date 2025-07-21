@@ -22,7 +22,7 @@ dependencies:
   google_fonts: ^6.2.1
   fl_chart: ^1.0.0
   pie_chart: ^5.1.0
-  flutter_map: ^6.1.0
+  flutter_map: ^8.2.1
   flutter_screenutil: ^5.9.0
   shimmer: ^3.0.0
   flutter_staggered_animations: ^1.1.1
@@ -48,6 +48,7 @@ dependencies:
   font_awesome_flutter: ^10.5.0  # Per icone più ricche
   animated_background: ^2.0.0
   lottie: ^3.1.0
+  cached_network_image: ^3.3.1
 
 dev_dependencies:
   flutter_test:
@@ -59,7 +60,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/logo_travelsage.png
     - assets/Travelsage.png
     - assets/animations/splash_travel.json
     - assets/animations/travel_ai.json
@@ -69,4 +69,4 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/logo_travelsage.png"
+  image_path: "assets/Travelsage.png"

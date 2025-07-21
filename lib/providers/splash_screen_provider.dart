@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:lottie/lottie.dart';
 import 'package:animated_background/animated_background.dart';
 import 'package:travel_sage/main.dart';
 
@@ -44,8 +43,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   Timer? _messageTimer;
   bool _isTransitioning = false;
 
-  // Future per precaricare la composizione Lottie
-  late Future<LottieComposition> _compositionFuture;
 
   @override
   void initState() {
@@ -108,8 +105,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _startMessageCycle();
     _startExitTimer();
 
-    // Precarica la composizione Lottie una volta sola
-    _compositionFuture = AssetLottie('assets/animations/splash_travel.json').load();
   }
 
   void _startMessageCycle() {
@@ -234,14 +229,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            ClipOval(
-                              child: Image.asset(
-                                'assets/Travelsage.png',
-                                width: logoSize,
-                                height: logoSize,
-                                fit: BoxFit.cover,
+                              Container(
+                                width: logoSize * 1.5,
+                                height: logoSize * 1.5,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.white.withOpacity(0.4),
+                                      blurRadius: 30,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/Travelsage.png',
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
-                            ),
                             const SizedBox(height: 40),
                             SizedBox(
                               width: logoSize * 0.4,
@@ -251,31 +258,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            const SizedBox(height: 20),
 
-                            // Qui usa FutureBuilder per Lottie precaricata
-                            FutureBuilder<LottieComposition>(
-                              future: _compositionFuture,
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
-                                  return Lottie(
-                                    composition: snapshot.data!,
-                                    width: 120,
-                                    height: 120,
-                                    repeat: true,
-                                    frameRate: FrameRate(60),
-                                  );
-                                } else {
-                                  return SizedBox(
-                                    width: 120,
-                                    height: 120,
-                                    child: Center(child: CircularProgressIndicator(color: Colors.white)),
-                                  );
-                                }
-                              },
-                            ),
-
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 40),
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 500),
                               transitionBuilder: (child, animation) {

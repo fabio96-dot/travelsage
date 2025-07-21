@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'spesa.dart';
 
 class Viaggio {
+  final String userId;
   final String id;
   final String titolo;
   final String partenza;
@@ -22,8 +23,10 @@ class Viaggio {
   final double raggioKm; // Raggio massimo in km
   final double etaMedia; // Età media dei partecipanti
   final String tipologiaViaggiatore; // Tipologia del viaggiatore
+  final String? immagineUrl;
 
   Viaggio({
+    required this.userId,
     required this.id,
     required this.titolo,
     required this.partenza,
@@ -42,12 +45,14 @@ class Viaggio {
     this.raggioKm = 100.0, // 👈 nuovo campo con valore di default
     this.etaMedia = 30.0, // 👈 nuovo campo con valore di default
     this.tipologiaViaggiatore = 'Backpacker', // 👈 nuovo campo con valore di default
+    this.immagineUrl,
     Map<String, List<Attivita>>? itinerario,
   }) : itinerario = itinerario ?? {};
 
   // Metodo copiaConSpese aggiornato
   Viaggio copiaConSpese(List<Spesa> nuoveSpese) {
     return Viaggio(
+      userId: userId,
       id: id,
       titolo: titolo,
       partenza: partenza,
@@ -67,11 +72,13 @@ class Viaggio {
       raggioKm: raggioKm, // 👈 copia del raggio massimo
       etaMedia: etaMedia, // 👈 copia dell'età media
       tipologiaViaggiatore: tipologiaViaggiatore, // 👈 copia della tipologia del viaggiatore
+      immagineUrl: immagineUrl, // 👈 copia dell'URL dell'immagine
     );
   }
 
   // Metodo copyWith completo
   Viaggio copyWith({
+    String? userId,
     String? id,
     String? titolo,
     String? partenza,
@@ -91,8 +98,10 @@ class Viaggio {
     double? etaMedia, // 👈 nuovo parametro
     String? tipologiaViaggiatore, // 👈 nuovo parametro
     Map<String, List<Attivita>>? itinerario,
+    String? immagineUrl, // 👈 nuovo parametro per l'immagine
   }) {
     return Viaggio(
+      userId: userId ?? this.userId,  
       id: id ?? this.id,
       titolo: titolo ?? this.titolo,
       partenza: partenza ?? this.partenza,
@@ -112,6 +121,7 @@ class Viaggio {
       raggioKm: raggioKm ?? this.raggioKm, // 👈
       etaMedia: etaMedia ?? this.etaMedia, // 👈
       tipologiaViaggiatore: tipologiaViaggiatore ?? this.tipologiaViaggiatore, // 👈
+      immagineUrl: immagineUrl ?? this.immagineUrl, // 👈
     );
   }
 
@@ -195,6 +205,7 @@ class Viaggio {
     }
 
     return Viaggio(
+    userId: json['userId']?.toString() ?? '',  
     id: json['id']?.toString() ?? '',
     titolo: json['titolo']?.toString() ?? '',
     partenza: json['partenza']?.toString() ?? '',
@@ -213,7 +224,7 @@ class Viaggio {
     raggioKm: _parseDouble(json['raggioKm'], 100.0),
     etaMedia: _parseDouble(json['etaMedia'], 30.0),
     tipologiaViaggiatore: json['tipologiaViaggiatore']?.toString() ?? 'Backpacker',
-    itinerario: json['itinerario'] != null
+    immagineUrl: json['immagineUrl']?.toString(),    itinerario: json['itinerario'] != null
         ? (json['itinerario'] as Map<String, dynamic>).map(
             (key, value) => MapEntry(
               key,
@@ -228,6 +239,7 @@ class Viaggio {
 
   Map<String, dynamic> toJson() {
     return {
+      'userId': userId,
       'id': id,
       'titolo': titolo,
       'partenza': partenza,
@@ -246,6 +258,7 @@ class Viaggio {
       'raggioKm': raggioKm, // 👈 nuovo campo
       'etaMedia': etaMedia, // 👈 nuovo campo
       'tipologiaViaggiatore': tipologiaViaggiatore, // 👈 nuovo campo
+      'immagineUrl': immagineUrl, // 👈 nuovo campo per l'immagine
       'itinerario': itinerario.map(
         (key, value) => MapEntry(
           key,
@@ -280,14 +293,25 @@ class Attivita {
   });
 
   factory Attivita.fromJson(Map<String, dynamic> json) {
+    final dynamic orarioRaw = json['orario'];
+
+    DateTime orarioParsed;
+    if (orarioRaw is Timestamp) {
+      orarioParsed = orarioRaw.toDate();
+    } else if (orarioRaw is String) {
+      orarioParsed = DateTime.tryParse(orarioRaw) ?? DateTime.now();
+    } else {
+      orarioParsed = DateTime.now(); // fallback sicuro
+    }
+
     return Attivita(
-      id: json['id'],
-      titolo: json['titolo'],
-      descrizione: json['descrizione'],
-      orario: DateTime.parse(json['orario']),
+      id: json['id'] ?? '',
+      titolo: json['titolo'] ?? '',
+      descrizione: json['descrizione'] ?? '',
+      orario: orarioParsed,
       luogo: json['luogo'],
       completata: json['completata'] ?? false,
-      generataDaIA: json['generataDaIA'] ?? false, // <-- leggi da JSON
+      generataDaIA: json['generataDaIA'] ?? false,
       categoria: json['categoria'] ?? 'attivita',
       costoStimato: (json['costoStimato'] ?? 0).toDouble(),
     );
@@ -298,7 +322,7 @@ class Attivita {
       'id': id,
       'titolo': titolo,
       'descrizione': descrizione,
-      'orario': orario.toIso8601String(),
+      'orario': Timestamp.fromDate(orario),
       'luogo': luogo,
       'completata': completata,
       'generataDaIA': generataDaIA, // <-- salva su Firestore

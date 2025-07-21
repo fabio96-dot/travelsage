@@ -5,30 +5,27 @@ import 'package:travel_sage/models/viaggio.dart';
 import 'package:travel_sage/utils/splitwise_logic.dart';
 import 'giorno_itinerario_page.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/spese_notifier.dart';
 
-class ViaggioDettaglioPage extends StatefulWidget {
+
+class ViaggioDettaglioPage extends ConsumerStatefulWidget {
   final Viaggio viaggio;
   final int index;
 
   const ViaggioDettaglioPage({super.key, required this.viaggio, required this.index});
 
   @override
-  _ViaggioDettaglioPageState createState() => _ViaggioDettaglioPageState();
+  ConsumerState<ViaggioDettaglioPage> createState() => _ViaggioDettaglioPageState();
 }
 
-class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
-    with SingleTickerProviderStateMixin {
-    late TabController _tabController;
-    final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-    // Stato locale per la lista spese
-    List<Spesa> _spese = [];
+class _ViaggioDettaglioPageState extends ConsumerState<ViaggioDettaglioPage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
 
 
-    final List<Tab> myTabs = <Tab>[
+  final List<Tab> myTabs = <Tab>[
     const Tab(text: 'Itinerario'),
-    const Tab(text: 'Pernottamenti'),
+    const Tab(text: 'Prenotazioni'),
     const Tab(text: 'Riepilogo Costi'),
   ];
 
@@ -36,24 +33,6 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: myTabs.length, vsync: this);
-     _loadSpese();
-  }
-
-  Future<void> _loadSpese() async {
-    final viaggioId = widget.viaggio.id;
-    final snapshot = await _firestore
-        .collection('viaggi')
-        .doc(viaggioId)
-        .collection('spese')
-        .get();
-
-    final speseList = snapshot.docs
-        .map((doc) => Spesa.fromJson(doc.data()))
-        .toList();
-
-    setState(() {
-      _spese = speseList;
-    });
   }
 
   @override
@@ -62,19 +41,18 @@ class _ViaggioDettaglioPageState extends State<ViaggioDettaglioPage>
     super.dispose();
   }
 
-Future<void> _aggiungiSpesa() async {
-
-      if (widget.viaggio.partecipanti.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+  Future<void> _aggiungiSpesa() async {
+    if (widget.viaggio.partecipanti.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-        content: const Text('Aggiungi partecipanti prima di inserire spese!'),
-        backgroundColor: Colors.red[700],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-    return;
-  }
+          content: const Text('Aggiungi partecipanti prima di inserire spese!'),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
 
     String descrizione = '';
     String importo = '';
@@ -82,9 +60,9 @@ Future<void> _aggiungiSpesa() async {
     List<String> selezionati = [];
     bool _importoInvalido = false;
     bool _pagatoreNonSelezionato = false;
-    bool _nessunCoinvolto = false; 
+    bool _nessunCoinvolto = false;
 
-  await showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -123,8 +101,7 @@ Future<void> _aggiungiSpesa() async {
                       border: const OutlineInputBorder(),
                       errorText: _importoInvalido ? 'Inserisci un numero valido' : null,
                     ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     onChanged: (val) {
                       importo = val;
                       setModalState(() {
@@ -232,16 +209,8 @@ Future<void> _aggiungiSpesa() async {
                           data: DateTime.now(),
                         );
 
-                        // Salva su Firestore
-                        final speseRef = _firestore
-                            .collection('viaggi')
-                            .doc(widget.viaggio.id)
-                            .collection('spese');
-                        await speseRef.doc(nuovaSpesa.id).set(nuovaSpesa.toJson());
-
-                        setState(() {
-                          _spese.add(nuovaSpesa);
-                        });
+                        // Usa il notifier per aggiungere la spesa con viaggioId
+                        await ref.read(speseProvider(widget.viaggio.id).notifier).aggiungiSpesa(widget.viaggio.id, nuovaSpesa);
 
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -269,351 +238,345 @@ Future<void> _aggiungiSpesa() async {
   }
 
 
+
 Future<void> _modificaSpesa(int index) async {
-    final spesa = _spese[index];
-    String descrizione = spesa.descrizione;
-    String importo = spesa.importo.toString();
-    String pagatore = spesa.pagatore;
-    List<String> selezionati = List.from(spesa.coinvolti);
+  final spese = ref.read(speseProvider(widget.viaggio.id));
+  final spesa = spese[index];
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                left: 16,
-                right: 16,
-                top: 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Modifica Spesa',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    TextFormField(
-                      decoration: const InputDecoration(
-                        labelText: 'Descrizione',
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      ),
-                      initialValue: descrizione,
-                      onChanged: (val) => descrizione = val,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      decoration: const InputDecoration(
-                        labelText: 'Importo (€)',
-                        border: OutlineInputBorder(),
-                        prefixText: '€',
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      ),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      initialValue: importo,
-                      onChanged: (val) => importo = val,
-                    ),
-                    const SizedBox(height: 16),
-                    InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: 'Chi ha pagato',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: pagatore.isNotEmpty
-                            ? const Icon(Icons.check, color: Colors.green)
-                            : null,
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: pagatore,
-                          items: widget.viaggio.partecipanti.map((p) {
-                            return DropdownMenuItem(
-                              value: p,
-                              child: Text(
-                                p,
-                                style: TextStyle(
-                                  color: pagatore == p ? Colors.green : Colors.black,
-                                  fontWeight: pagatore == p
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            setModalState(() {
-                              pagatore = val ?? '';
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Coinvolti:',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: widget.viaggio.partecipanti.map((p) {
-                        final selected = selezionati.contains(p);
-                        return FilterChip(
-                          label: Text(p),
-                          selected: selected,
-                          onSelected: (val) {
-                            setModalState(() {
-                              if (val) {
-                                selezionati.add(p);
-                              } else {
-                                selezionati.remove(p);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey[300],
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text('Annulla'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              if (descrizione.isNotEmpty &&
-                                  importo.isNotEmpty &&
-                                  pagatore.isNotEmpty &&
-                                  selezionati.isNotEmpty) {
-                                final spesaModificata = Spesa(
-                                  id: spesa.id,
-                                  descrizione: descrizione,
-                                  importo: double.tryParse(importo) ?? 0.0,
-                                  pagatore: pagatore,
-                                  coinvolti: List.from(selezionati),
-                                  data: spesa.data,
-                                );
+  String descrizione = spesa.descrizione;
+  String importo = spesa.importo.toString();
+  String pagatore = spesa.pagatore;
+  List<String> selezionati = List.from(spesa.coinvolti);
 
-                                // Aggiorna Firestore
-                                final speseRef = _firestore
-                                    .collection('viaggi')
-                                    .doc(widget.viaggio.id)
-                                    .collection('spese');
-                                await speseRef
-                                    .doc(spesaModificata.id)
-                                    .set(spesaModificata.toJson());
-
-                                setState(() {
-                                  _spese[index] = spesaModificata;
-                                });
-
-                                Navigator.pop(context);
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigo,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text('Salva'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
- Future<void> _eliminaSpesa(int index) async {
-    final conferma = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Conferma eliminazione'),
-          content: const Text('Vuoi davvero eliminare questa spesa?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Annulla'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Elimina', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (conferma == true) {
-      final spesaId = _spese[index].id;
-      final speseRef = _firestore
-          .collection('viaggi')
-          .doc(widget.viaggio.id)
-          .collection('spese');
-
-      await speseRef.doc(spesaId).delete();
-
-      setState(() {
-        _spese.removeAt(index);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Spesa eliminata con successo'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-
-Widget _buildRiepilogoCosti() {
-  final totaleSpese = _spese.fold(0.0, (sum, s) => sum + s.importo);
-  final partecipanti = widget.viaggio.partecipanti;
-
-  final spesePerPartecipante = <String, double>{};
-  for (final p in partecipanti) {
-    spesePerPartecipante[p] = _spese
-      .where((s) => s.pagatore == p)
-      .fold(0.0, (sum, s) => sum + s.importo);
-  }
-
-  final quotaEqua = partecipanti.isEmpty ? 0.0 : totaleSpese / partecipanti.length;
-
-  final transactions = SplitwiseLogic.calculateOptimizedTransactions(
-    _spese, // usa _spese, non widget.viaggio.spese
-    partecipanti,
-  );
-  
-  return SingleChildScrollView(
-    physics: const BouncingScrollPhysics(), // Fisica di scrolling più naturale
-    padding: const EdgeInsets.only(bottom: 100), // Spazio extra in fondo
-    child: Column(
-      children: [
-        // Riepilogo rapido
-        Card(
-          margin: const EdgeInsets.all(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Text(
-                  'Riepilogo Spese',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Totale speso:'),
-                    Text(
-                      '€${totaleSpese.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Media per persona:'),
-                    Text(
-                      '€${quotaEqua.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Grafico
-        const Padding(
-          padding: EdgeInsets.only(right: 16, left: 16, top: 10, bottom: 24),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Spese per partecipante',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 260,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _buildBarChart(spesePerPartecipante),
-          ),
-        ),
-
-        // Transazioni
-        const Padding(
-          padding: EdgeInsets.only(left: 16, top: 24),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Riepilogo debiti',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        if (transactions.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Tutti i conti sono in pari!'),
-          )
-        else
-          ...transactions.map((t) => _buildTransactionTile(t)),
-
-        // Lista spese
-        const Padding(
-          padding: EdgeInsets.only(left: 16, top: 24),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Dettaglio spese',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        ..._spese.map((spesa) => _buildExpenseTile(spesa)),
-      ],
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              left: 16,
+              right: 16,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Modifica Spesa',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Descrizione',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    ),
+                    initialValue: descrizione,
+                    onChanged: (val) => descrizione = val,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Importo (€)',
+                      border: OutlineInputBorder(),
+                      prefixText: '€',
+                      contentPadding:
+                          EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    ),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    initialValue: importo,
+                    onChanged: (val) => importo = val,
+                  ),
+                  const SizedBox(height: 16),
+                  InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Chi ha pagato',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: pagatore.isNotEmpty
+                          ? const Icon(Icons.check, color: Colors.green)
+                          : null,
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: pagatore,
+                        items: widget.viaggio.partecipanti.map((p) {
+                          return DropdownMenuItem(
+                            value: p,
+                            child: Text(
+                              p,
+                              style: TextStyle(
+                                color: pagatore == p ? Colors.green : Colors.black,
+                                fontWeight: pagatore == p
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          setModalState(() {
+                            pagatore = val ?? '';
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Coinvolti:',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: widget.viaggio.partecipanti.map((p) {
+                      final selected = selezionati.contains(p);
+                      return FilterChip(
+                        label: Text(p),
+                        selected: selected,
+                        onSelected: (val) {
+                          setModalState(() {
+                            if (val) {
+                              selezionati.add(p);
+                            } else {
+                              selezionati.remove(p);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[300],
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text('Annulla'),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (descrizione.isNotEmpty &&
+                                importo.isNotEmpty &&
+                                pagatore.isNotEmpty &&
+                                selezionati.isNotEmpty) {
+                              final spesaModificata = Spesa(
+                                id: spesa.id,
+                                descrizione: descrizione,
+                                importo: double.tryParse(importo) ?? 0.0,
+                                pagatore: pagatore,
+                                coinvolti: List.from(selezionati),
+                                data: spesa.data,
+                              );
+
+                              
+                              // Usa il notifier Riverpod per modificare la spesa
+                              await ref.read(speseProvider(widget.viaggio.id).notifier)
+                                .modificaSpesa(widget.viaggio.id, spesaModificata);
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Spesa modificata con successo!'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text('Salva'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
   );
 }
+
+
+Future<void> _eliminaSpesa(int index) async {
+  final conferma = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Conferma eliminazione'),
+        content: const Text('Vuoi davvero eliminare questa spesa?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annulla'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Elimina', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (conferma == true) {
+    final spesaId = ref.read(speseProvider(widget.viaggio.id))[index].id;
+
+    await ref.read(speseProvider(widget.viaggio.id).notifier)
+      .eliminaSpesa(widget.viaggio.id, spesaId);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Spesa eliminata con successo'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+
+
+  Widget _buildRiepilogoCosti() {
+    final spese = ref.watch(speseProvider(widget.viaggio.id));
+    final totaleSpese = spese.fold(0.0, (sum, s) => sum + s.importo);
+    final partecipanti = widget.viaggio.partecipanti;
+
+    final spesePerPartecipante = <String, double>{};
+    for (final p in partecipanti) {
+      spesePerPartecipante[p] = spese
+        .where((s) => s.pagatore == p)
+        .fold(0.0, (sum, s) => sum + s.importo);
+    }
+
+    final quotaEqua = partecipanti.isEmpty ? 0.0 : totaleSpese / partecipanti.length;
+
+    final transactions = SplitwiseLogic.calculateOptimizedTransactions(
+      spese,
+      partecipanti,
+    );
+    
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 100),
+      child: Column(
+        children: [
+          Card(
+            margin: const EdgeInsets.all(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    'Riepilogo Spese',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Totale speso:'),
+                      Text(
+                        '€${totaleSpese.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Media per persona:'),
+                      Text(
+                        '€${quotaEqua.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const Padding(
+            padding: EdgeInsets.only(right: 16, left: 16, top: 10, bottom: 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Spese per partecipante',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 260,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildBarChart(spesePerPartecipante),
+            ),
+          ),
+
+          const Padding(
+            padding: EdgeInsets.only(left: 16, top: 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Riepilogo debiti',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          if (transactions.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Tutti i conti sono in pari!'),
+            )
+          else
+            ...transactions.map((t) => _buildTransactionTile(t)),
+
+          const Padding(
+            padding: EdgeInsets.only(left: 16, top: 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Dettaglio spese',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          ...spese.map((spesa) => _buildExpenseTile(spesa, spese)),
+        ],
+      ),
+    );
+  }
+
 
 Widget _buildBarChart(Map<String, double> data) {
   final maxValue = data.values.fold(0.0, (max, value) => value > max ? value : max);
@@ -746,35 +709,38 @@ Widget _buildTransactionTile(Map<String, dynamic> transaction) {
   );
 }
 
-Widget _buildExpenseTile(Spesa spesa) {
-  return Card(
-    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: ListTile(
-      title: Text(spesa.descrizione),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Pagato da: ${spesa.pagatore}'),
-          Text('Importo: €${spesa.importo.toStringAsFixed(2)}'),
-          Text('Coinvolti: ${spesa.coinvolti.join(', ')}'),
-        ],
+  Widget _buildExpenseTile(Spesa spesa, List<Spesa> spese) {
+    final index = spese.indexOf(spesa);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListTile(
+        title: Text(spesa.descrizione),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Pagato da: ${spesa.pagatore}'),
+            Text('Importo: €${spesa.importo.toStringAsFixed(2)}'),
+            Text('Coinvolti: ${spesa.coinvolti.join(', ')}'),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () => _modificaSpesa(index),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: () => _eliminaSpesa(index),
+            ),
+          ],
+        ),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => _modificaSpesa(_spese.indexOf(spesa)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            onPressed: () => _eliminaSpesa(_spese.indexOf(spesa)),
-          ),
-        ],
-      ),
-    ),
-  );
-}
+    );
+  }
+
 
   Widget _buildItinerarioTab() {
   final giorniTotali = widget.viaggio.dataFine.difference(widget.viaggio.dataInizio).inDays + 1;

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/viaggio.dart';
 
-class AggiungiAttivitaPage extends StatefulWidget {
+class AggiungiAttivitaPage extends ConsumerStatefulWidget {
   final DateTime giorno;
   final Viaggio viaggio;
   final Attivita? attivitaEsistente;
@@ -16,16 +18,16 @@ class AggiungiAttivitaPage extends StatefulWidget {
   });
 
   @override
-  State<AggiungiAttivitaPage> createState() => _AggiungiAttivitaPageState();
+  ConsumerState<AggiungiAttivitaPage> createState() => _AggiungiAttivitaPageState();
 }
 
-class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
+class _AggiungiAttivitaPageState extends ConsumerState<AggiungiAttivitaPage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController titoloController;
   late TextEditingController luogoController;
   late TextEditingController descrizioneController;
-  late TimeOfDay? orario;
+  TimeOfDay? orario;
   late bool completata;
 
   late AnimationController _animController;
@@ -34,23 +36,20 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
   @override
   void initState() {
     super.initState();
-    
-    // Inizializza i controller con i valori esistenti se presenti
+
     titoloController = TextEditingController(text: widget.attivitaEsistente?.titolo ?? '');
     luogoController = TextEditingController(text: widget.attivitaEsistente?.luogo ?? '');
     descrizioneController = TextEditingController(text: widget.attivitaEsistente?.descrizione ?? '');
     completata = widget.attivitaEsistente?.completata ?? false;
-    
-    // Imposta l'orario iniziale
+
     if (widget.attivitaEsistente != null) {
       orario = TimeOfDay.fromDateTime(widget.attivitaEsistente!.orario);
-    } else {
-      orario = null;
     }
 
-    // Animazioni
-    _animController =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     _fadeIn = CurvedAnimation(parent: _animController, curve: Curves.easeInOut);
     _animController.forward();
   }
@@ -64,27 +63,46 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
     super.dispose();
   }
 
-  void salvaAttivita() {
+  Future<void> salvaAttivita() async {
     if (_formKey.currentState!.validate() && orario != null) {
-      final now = widget.giorno;
-      final dateTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
+      final giornoKey = DateFormat('yyyy-MM-dd').format(widget.giorno);
+
+      final orarioCompleto = DateTime(
+        widget.giorno.year,
+        widget.giorno.month,
+        widget.giorno.day,
         orario!.hour,
         orario!.minute,
       );
 
-      final attivita = Attivita(
+      final nuovaAttivita = Attivita(
         id: widget.attivitaEsistente?.id ?? const Uuid().v4(),
         titolo: titoloController.text.trim(),
         descrizione: descrizioneController.text.trim(),
-        orario: dateTime,
+        orario: orarioCompleto,
         luogo: luogoController.text.trim(),
         completata: completata,
+        generataDaIA: widget.attivitaEsistente?.generataDaIA ?? false,
+        categoria: widget.attivitaEsistente?.categoria ?? 'attivita',
+        costoStimato: widget.attivitaEsistente?.costoStimato ?? 0.0,
       );
 
-      Navigator.pop(context, attivita);
+      final firestore = FirebaseFirestore.instance;
+
+      await firestore
+          .collection('users')
+          .doc(widget.viaggio.userId)
+          .collection('viaggi')
+          .doc(widget.viaggio.id)
+          .collection('attivita')
+          .doc(nuovaAttivita.id)
+          .set({
+        ...nuovaAttivita.toJson(),
+        'giorno': giornoKey, // 🔥 per filtrare nel provider
+      });
+
+      if (!mounted) return;
+      Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -101,7 +119,6 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
     final isModifica = widget.attivitaEsistente != null;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -139,13 +156,11 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                   children: [
                     TextFormField(
                       controller: titoloController,
-                      style: const TextStyle(fontSize: 18),
                       decoration: const InputDecoration(
                         labelText: 'Titolo attività *',
                         prefixIcon: Icon(Icons.edit),
                       ),
-                      validator: (value) =>
-                          value!.isEmpty ? 'Scrivi un titolo' : null,
+                      validator: (value) => value!.isEmpty ? 'Scrivi un titolo' : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -161,7 +176,6 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                       maxLines: 3,
                       decoration: const InputDecoration(
                         labelText: 'Dettagli (facoltativi)',
-                        hintText: 'Es. colazione sulla terrazza...',
                         prefixIcon: Icon(Icons.notes),
                         alignLabelWithHint: true,
                       ),
@@ -179,13 +193,6 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                         ),
                         const Spacer(),
                         ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
-                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
                           onPressed: () async {
                             final picked = await showTimePicker(
                               context: context,
@@ -205,9 +212,7 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                         title: const Text('Attività completata'),
                         value: completata,
                         onChanged: (value) {
-                          setState(() {
-                            completata = value;
-                          });
+                          setState(() => completata = value);
                         },
                       ),
                     ],
@@ -216,7 +221,7 @@ class _AggiungiAttivitaPageState extends State<AggiungiAttivitaPage>
                       onPressed: salvaAttivita,
                       icon: const Icon(Icons.check),
                       label: Text(
-                        "${isModifica ? 'Salva modifiche' : 'Salva attività'}",
+                        isModifica ? 'Salva modifiche' : 'Salva attività',
                         style: const TextStyle(fontSize: 16),
                       ),
                       style: ElevatedButton.styleFrom(

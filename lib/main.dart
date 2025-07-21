@@ -9,10 +9,10 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'screens/login/login_screen.dart';
 import 'models/viaggio.dart';
 import 'pages/viaggio_dettaglio_page.dart';
-import 'pages/modifica_viaggio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'pages/setting_page.dart';
 import 'firebase_options.dart';
@@ -36,22 +36,26 @@ import 'providers/travel_provider.dart';
 import 'providers/splash_screen_provider.dart';
 
 
+
 final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Rendi gli errori di zona fatali durante lo sviluppo
+  BindingBase.debugZoneErrorsAreFatal = true;
 
-  await _setupEnvironment();
+  await runZonedGuarded(() async {
+    // Inizializzazione dentro la stessa zona
+    WidgetsFlutterBinding.ensureInitialized();
 
-  runZonedGuarded(() {
+    await _setupEnvironment();
+    await _initializeAppServices();
+
     runApp(
       const ProviderScope(
         child: AppEntryPoint(),
       ),
     );
   }, (error, stack) => _handleStartupError(error, stack));
-
-  unawaited(_initializeAppServices());
 }
 
 class AppEntryPoint extends ConsumerWidget {
@@ -89,10 +93,11 @@ Future<void> _initializeAppServices() async {
     ], eagerError: true);
 
     if (Firebase.apps.isNotEmpty) {
-      await FirebaseAnalytics.instance.logAppOpen();
+      unawaited(FirebaseAnalytics.instance.logAppOpen());
     }
   } catch (e, stack) {
     _handleStartupError(e, stack);
+    rethrow; // Importante per far propagare l'errore a runZonedGuarded
   }
 }
 
@@ -424,7 +429,7 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
     );
   }
 
-  Future<void> _submit() async {
+Future<void> _submit() async {
   final departure = _departureController.text.trim();
   final destination = _destinationController.text.trim();
   final budget = _budgetController.text.trim();
@@ -478,7 +483,6 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
         }
 
         final String jsonString = estraiJson(rawResponse);
-
         final Map<String, dynamic> decoded = jsonDecode(jsonString);
         final Map<String, List<Attivita>> itinerario = {};
 
@@ -523,6 +527,7 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
         final destinazioneFinale = destination.isNotEmpty ? destination : 'Viaggio';
 
         final nuovoViaggio = Viaggio(
+          userId: FirebaseAuth.instance.currentUser?.uid ?? '',
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           titolo: destination,
           partenza: departure,
@@ -544,6 +549,38 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
           interessi: List.from(interessiSelezionati),
         );
 
+        // Salvataggio delle attività nella sottocollezione 'attivita'
+        final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final viaggioId = nuovoViaggio.id;
+        final firestore = FirebaseFirestore.instance;
+
+        for (final entry in itinerario.entries) {
+          final giorno = entry.key;
+          final List<Attivita> attivitaList = entry.value;
+
+          for (final attivita in attivitaList) {
+            await firestore
+                .collection('users')
+                .doc(userId)
+                .collection('viaggi')
+                .doc(viaggioId)
+                .collection('attivita')
+                .doc(attivita.id)
+                .set({
+              'id': attivita.id,
+              'titolo': attivita.titolo,
+              'descrizione': attivita.descrizione,
+              'orario': Timestamp.fromDate(attivita.orario),
+              'luogo': attivita.luogo,
+              'completata': attivita.completata,
+              'categoria': attivita.categoria,
+              'costoStimato': attivita.costoStimato,
+              'generataDaIA': attivita.generataDaIA,
+              'giorno': giorno,
+            });
+          }
+        }
+
         await FirestoreService().saveViaggio(nuovoViaggio);
         widget.onViaggioCreato(nuovoViaggio);
 
@@ -558,8 +595,9 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
           MaterialPageRoute(builder: (_) => ViaggioCreatoPage(viaggio: nuovoViaggio)),
         );
       } else {
-        // IA disabilitata
+        // IA disabilitata - crea viaggio senza attività
         final nuovoViaggio = Viaggio(
+          userId: FirebaseAuth.instance.currentUser?.uid ?? '',
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           titolo: destination,
           partenza: departure,
@@ -618,6 +656,7 @@ class _OrganizeTripPageState extends ConsumerState<OrganizeTripPage> with Ticker
     );
   }
 }
+
 
 
   @override
@@ -784,7 +823,8 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final travelState = ref.watch(travelProvider);
-    final viaggiNonArchiviati = travelState.viaggi.where((v) => !v.archiviato).toList();
+    final viaggiNonArchiviati = travelState.viaggi.where((v) => !v.archiviato).toList()
+      ..sort((a, b) => a.dataInizio.compareTo(b.dataInizio));
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -805,195 +845,134 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final theme = Theme.of(context);
+Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
+  final screenWidth = MediaQuery.of(context).size.width;
+  final theme = Theme.of(context);
 
-    int cardsPerRow;
-    double cardHeight;
+  int cardsPerRow;
+  double cardHeight;
 
-    if (screenWidth >= 1200) {
-      cardsPerRow = 4;
-      cardHeight = 220;
-    } else if (screenWidth >= 800) {
-      cardsPerRow = 3;
-      cardHeight = 200;
-    } else if (screenWidth >= 600) {
-      cardsPerRow = 2;
-      cardHeight = 180;
-    } else {
-      cardsPerRow = 1;
-      cardHeight = 160;
-    }
+  if (screenWidth >= 1200) {
+    cardsPerRow = 4;
+    cardHeight = 180;
+  } else if (screenWidth >= 800) {
+    cardsPerRow = 3;
+    cardHeight = 170;
+  } else if (screenWidth >= 600) {
+    cardsPerRow = 2;
+    cardHeight = 160;
+  } else {
+    cardsPerRow = 1;
+    cardHeight = 150;
+  }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(travelProvider.notifier).caricaViaggi(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: GridView.builder(
-          itemCount: viaggiNonArchiviati.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cardsPerRow,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
-          ),
-          itemBuilder: (context, index) {
-            final viaggio = viaggiNonArchiviati[index];
-            final imageUrl = 'https://source.unsplash.com/400x200/?travel,${viaggio.destinazione}';
-            final titoloDaMostrare = (viaggio.titolo.trim().isNotEmpty
-                ? viaggio.titolo.trim()
-                : viaggio.destinazione.trim().isNotEmpty
-                    ? viaggio.destinazione.trim()
-                    : 'Senza Titolo');
-            final totale = calcolaTotaleStimato(viaggio.itinerario);
-            final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
-            final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
+  return RefreshIndicator(
+    onRefresh: () => ref.read(travelProvider.notifier).caricaViaggi(),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: GridView.builder(
+        itemCount: viaggiNonArchiviati.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardsPerRow,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
+        ),
+        itemBuilder: (context, index) {
+          final viaggio = viaggiNonArchiviati[index];
+          final titolo = viaggio.titolo.trim().isNotEmpty
+              ? viaggio.titolo.trim()
+              : viaggio.destinazione.trim().isNotEmpty
+                  ? viaggio.destinazione.trim()
+                  : 'Senza Titolo';
+          final totale = calcolaTotaleStimato(viaggio.itinerario);
+          final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
+          final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
 
-            return InkWell(
-              key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => viaggio.confermato
-                        ? ViaggioDettaglioPage(viaggio: viaggio, index: index)
-                        : ModificaViaggioPage(viaggio: viaggio, index: index),
-                  ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  image: DecorationImage(
-                    image: NetworkImage(imageUrl),
-                    fit: BoxFit.cover,
-                    colorFilter: ColorFilter.mode(
-                      Colors.black.withOpacity(0.5),
-                      BlendMode.darken,
-                    ),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.3),
-                      blurRadius: 5,
-                      spreadRadius: 1,
-                    ),
-                  ],
+          return InkWell(
+            key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+              );
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Riga titolo + elimina
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            viaggio.confermato ? Icons.check_circle : Icons.edit_note,
-                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                            size: 28,
+                      const Icon(Icons.location_on_rounded, color: Colors.indigo, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          titolo,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              titoloDaMostrare,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (!viaggio.confermato)
-                            ElevatedButton(
-                              onPressed: () async {
-                                try {
-                                    await ref.read(travelProvider.notifier)
-                                      .salvaViaggio(viaggio.copyWith(confermato: true));
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Errore durante la conferma: $e')),
-                                      );
-                                  }
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.indigoAccent,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              child: const Text('Conferma'),
-                            ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => _showDeleteDialog(viaggio),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white70,
-                            ),
-                      ),
-                      Tooltip(
-                        message: haSuperatoBudget
-                            ? "Hai sforato il budget previsto"
-                            : "Spesa stimata entro il budget",
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        textStyle: TextStyle(
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.euro, size: 18, color: Colors.white70),
-                            const SizedBox(width: 6),
-                            Text(
-                              "Preventivo: €${totale.toStringAsFixed(2)}",
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: colorePreventivo,
-                              ),
-                            ),
-                          ],
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(
-                            viaggio.confermato ? Icons.lock_open_rounded : Icons.edit,
-                            size: 16,
-                            color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            viaggio.confermato ? 'Viaggio confermato' : 'Bozza in lavorazione',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: viaggio.confermato ? Colors.greenAccent : Colors.orangeAccent,
-                            ),
-                          ),
-                        ],
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        onPressed: () => _showDeleteDialog(viaggio),
                       ),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 12),
+
+                  // Date
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
+                        style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Preventivo
+                  Row(
+                    children: [
+                      const Icon(Icons.euro, size: 16, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Preventivo: €${totale.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: colorePreventivo,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
-    );
-  }
+    ),
+  );
+}
 }

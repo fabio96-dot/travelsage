@@ -21,29 +21,31 @@ class WorldMapVisited extends StatelessWidget {
       height: 300,
       child: FlutterMap(
         options: MapOptions(
-          center: LatLng(20, 0),
-          zoom: 2,
-          interactiveFlags: InteractiveFlag.all,
+          initialCenter: LatLng(20, 0),  // Cambiato da 'center' a 'initialCenter'
+          initialZoom: 2,               // Cambiato da 'zoom' a 'initialZoom'
+          interactionOptions: const InteractionOptions(  // Nuova sintassi per i flag
+            flags: InteractiveFlag.all,
+          ),
         ),
         children: [
           TileLayer(
             urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
             userAgentPackageName: 'com.example.travel_sage',
           ),
-        MarkerLayer(
-                  markers: destinazioni.map((latlng) {
-                    return Marker(
-                      point: latlng,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.indigo,
-                        size: 30,
-                      ),
-                    );
-                  }).toList(),
-        ),
+          MarkerLayer(
+            markers: destinazioni.map((latlng) {
+              return Marker(
+                point: latlng,
+                width: 40,
+                height: 40,
+                child: const Icon(
+                  Icons.location_on,
+                  color: Colors.indigo,
+                  size: 30,
+                ),
+              );
+            }).toList(),
+          ),
         ],
       ),
     );
