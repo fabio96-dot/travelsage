@@ -29,11 +29,21 @@ class _ViaggioDettaglioPageState extends ConsumerState<ViaggioDettaglioPage> wit
     const Tab(text: 'Riepilogo Costi'),
   ];
 
+  int _currentIndex = 0;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: myTabs.length, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {
+          _currentIndex = _tabController.index;
+        });
+      }
+    });
   }
+
 
   @override
   void dispose() {
@@ -796,22 +806,21 @@ Widget build(BuildContext context) {
       controller: _tabController,
       children: [
         _buildItinerarioTab(),
-        const Center(child: Text('Sezione Pernottamenti - da implementare')),
+        const Center(child: Text('Sezione Prenotazioni - da implementare')),
         _buildRiepilogoCosti(),
       ],
     ),
-    floatingActionButton: Padding(
-      padding: const EdgeInsets.only(bottom: 16), // Spazio sotto il pulsante
-      child: FloatingActionButton.extended(
-            onPressed: () async {
-      await _aggiungiSpesa();
-      },
-        icon: const Icon(Icons.add),
-        label: const Text('Aggiungi Spesa'),
-      ),
+      floatingActionButton: _currentIndex == 2
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                await _aggiungiSpesa();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Aggiungi Spesa'),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     ),
-    floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-  )
-  );
-}
+   );
+  }
 }

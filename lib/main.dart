@@ -34,6 +34,7 @@ import 'pages/viaggiatore_form_tab.dart';
 import 'providers/theme_provider.dart';
 import 'providers/travel_provider.dart';
 import 'providers/splash_screen_provider.dart';
+import 'services/unsplash_api.dart';
 
 
 
@@ -854,16 +855,16 @@ Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati)
 
   if (screenWidth >= 1200) {
     cardsPerRow = 4;
-    cardHeight = 180;
+    cardHeight = 280;
   } else if (screenWidth >= 800) {
     cardsPerRow = 3;
-    cardHeight = 170;
+    cardHeight = 260;
   } else if (screenWidth >= 600) {
     cardsPerRow = 2;
-    cardHeight = 160;
+    cardHeight = 250;
   } else {
     cardsPerRow = 1;
-    cardHeight = 150;
+    cardHeight = 240;
   }
 
   return RefreshIndicator(
@@ -889,86 +890,122 @@ Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati)
           final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
           final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
 
-          return InkWell(
-            key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
+          return FutureBuilder<String?>(
+            future: ref.read(unsplashApiProvider).getImageForViaggio(viaggio),
+            builder: (context, snapshot) {
+              final imageUrl = snapshot.data;
+
+              return InkWell(
+                key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
+                    ),
+                  );
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: theme.cardColor,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Hero image in alto
+                      if (imageUrl != null)
+                        ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                          child: Image.network(
+                            imageUrl,
+                            height: 100,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      else
+                        Container(
+                          height: 100,
+                          width: double.infinity,
+                          decoration: const BoxDecoration(
+                            color: Colors.grey,
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(24),
+                              topRight: Radius.circular(24),
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.photo_outlined, color: Colors.white70, size: 40),
+                        ),
+
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.location_on_rounded, color: Colors.indigo, size: 22),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    titolo,
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  onPressed: () => _showDeleteDialog(viaggio),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
+                                  style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.euro, size: 16, color: Colors.grey),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Preventivo: €${totale.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: colorePreventivo,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16), // 👉 padding extra in basso
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
                 ),
               );
             },
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Riga titolo + elimina
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.location_on_rounded, color: Colors.indigo, size: 22),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          titolo,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                        onPressed: () => _showDeleteDialog(viaggio),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Date
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
-                        style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Preventivo
-                  Row(
-                    children: [
-                      const Icon(Icons.euro, size: 16, color: Colors.grey),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Preventivo: €${totale.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: colorePreventivo,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           );
         },
       ),
