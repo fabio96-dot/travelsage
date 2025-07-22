@@ -7,7 +7,7 @@ import 'giorno_itinerario_page.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/spese_notifier.dart';
-
+import 'prenotazioni_tab.dart';
 
 class ViaggioDettaglioPage extends ConsumerStatefulWidget {
   final Viaggio viaggio;
@@ -802,14 +802,14 @@ Widget build(BuildContext context) {
       ),
       bottom: TabBar(controller: _tabController, tabs: myTabs),
     ),
-    body: TabBarView(
-      controller: _tabController,
-      children: [
-        _buildItinerarioTab(),
-        const Center(child: Text('Sezione Prenotazioni - da implementare')),
-        _buildRiepilogoCosti(),
-      ],
-    ),
+     body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildItinerarioTab(),
+          PrenotazioniTab(viaggio: widget.viaggio), // 👈
+          _buildRiepilogoCosti(),
+        ],
+      ),
       floatingActionButton: _currentIndex == 2
           ? FloatingActionButton.extended(
               onPressed: () async {
