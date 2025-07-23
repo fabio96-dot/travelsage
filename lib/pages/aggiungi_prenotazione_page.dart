@@ -24,7 +24,6 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
   late TextEditingController _luogoController;
   late TextEditingController _descrizioneController;
   late TextEditingController _linkController;
-  late TextEditingController _urlImmagineController;
   late TextEditingController _costoController;
 
   DateTime? _data;
@@ -40,7 +39,6 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
     _titoloController = TextEditingController(text: p?.titolo ?? '');
     _luogoController = TextEditingController(text: p?.luogo ?? '');
     _descrizioneController = TextEditingController(text: p?.descrizione ?? '');
-    _urlImmagineController = TextEditingController(text: p?.immagineUrl ?? '');
     _linkController = TextEditingController(text: p?.link ?? '');
     _costoController = TextEditingController(text: p?.costo?.toString() ?? '');
     _data = p?.data ?? widget.viaggio.dataInizio;
@@ -52,10 +50,17 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
     _titoloController.dispose();
     _luogoController.dispose();
     _descrizioneController.dispose();
-    _urlImmagineController.dispose();
     _linkController.dispose();
     _costoController.dispose();
     super.dispose();
+  }
+
+  String normalizzaLink(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return '';
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://')
+        ? trimmed
+        : 'https://$trimmed';
   }
 
   Future<void> _selectData(BuildContext context) async {
@@ -95,11 +100,9 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
       descrizione: _descrizioneController.text.trim(),
       categoria: _categoria,
       data: _data!,
-      immagineUrl: _urlImmagineController.text.trim().isEmpty
-          ? null
-          : _urlImmagineController.text.trim(),
-      link: _linkController.text.trim().isEmpty ? null : _linkController.text.trim(),
+      link: normalizzaLink(_linkController.text),
       costo: costo,
+      immagineUrl: null, // rimosso effettivamente, per compatibilità col model
     );
 
     Navigator.pop(context, nuovaPrenotazione);
@@ -156,16 +159,7 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
                 controller: _linkController,
                 decoration: const InputDecoration(
                   labelText: 'Link prenotazione (opzionale)',
-                  hintText: 'https://booking.com/...',
-                ),
-                keyboardType: TextInputType.url,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _urlImmagineController,
-                decoration: const InputDecoration(
-                  labelText: 'URL immagine (opzionale)',
-                  hintText: 'https://...',
+                  hintText: 'booking.com/hotel...',
                 ),
                 keyboardType: TextInputType.url,
               ),
@@ -201,4 +195,5 @@ class _AggiungiPrenotazionePageState extends State<AggiungiPrenotazionePage> {
     );
   }
 }
+
 

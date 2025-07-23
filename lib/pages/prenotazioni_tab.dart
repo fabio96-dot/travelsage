@@ -78,7 +78,7 @@ class _PrenotazioniTabState extends ConsumerState<PrenotazioniTab> {
           }
         },
         icon: const Icon(Icons.add),
-        label: const Text("Aggiungi Prenotazione"),
+        label: const Text("Aggiungi"),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );

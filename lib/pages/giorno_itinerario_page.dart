@@ -181,7 +181,7 @@ class GiornoItinerarioPage extends ConsumerWidget {
           }
         },
         icon: const Icon(Icons.add),
-        label: const Text("Aggiungi attività"),
+        label: const Text("Aggiungi"),
       ),
     );
   }

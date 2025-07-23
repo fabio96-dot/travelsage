@@ -816,7 +816,7 @@ Widget build(BuildContext context) {
                 await _aggiungiSpesa();
               },
               icon: const Icon(Icons.add),
-              label: const Text('Aggiungi Spesa'),
+              label: const Text('Aggiungi'),
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

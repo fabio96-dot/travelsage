@@ -6,7 +6,17 @@ class AnimatedDiaryCard extends StatefulWidget {
   final Viaggio viaggio;
   final int index;
 
-  const AnimatedDiaryCard({super.key, required this.viaggio, required this.index});
+  // Aggiungiamo i callback opzionali per delete e tap
+  final VoidCallback? onDelete;
+  final VoidCallback? onTap;
+
+  const AnimatedDiaryCard({
+    super.key,
+    required this.viaggio,
+    required this.index,
+    this.onDelete,
+    this.onTap,
+  });
 
   @override
   State<AnimatedDiaryCard> createState() => _AnimatedDiaryCardState();
@@ -52,8 +62,13 @@ class _AnimatedDiaryCardState extends State<AnimatedDiaryCard>
       opacity: _opacity,
       child: SlideTransition(
         position: _offset,
-        child: DiaryCard(viaggio: widget.viaggio),
+        child: DiaryCard(
+          viaggio: widget.viaggio,
+          onDelete: widget.onDelete,
+          onTap: widget.onTap,
+        ),
       ),
     );
   }
 }
+

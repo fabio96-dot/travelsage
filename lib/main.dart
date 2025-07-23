@@ -41,8 +41,6 @@ import 'services/unsplash_api.dart';
 final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  // Rendi gli errori di zona fatali durante lo sviluppo
-  BindingBase.debugZoneErrorsAreFatal = true;
 
   await runZonedGuarded(() async {
     // Inizializzazione dentro la stessa zona
@@ -542,7 +540,7 @@ Future<void> _submit() async {
           raggioKm: raggioKm,
           etaMedia: etaMedia,
           tipologiaViaggiatore: tipologiaViaggiatore,
-          confermato: false,
+          confermato: true,
           spese: [],
           archiviato: false,
           note: null,
@@ -612,7 +610,7 @@ Future<void> _submit() async {
           raggioKm: raggioKm,
           etaMedia: etaMedia,
           tipologiaViaggiatore: tipologiaViaggiatore,
-          confermato: false,
+          confermato: true,
           spese: [],
           archiviato: false,
           note: null,
@@ -744,16 +742,21 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _caricaViaggiIniziali();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _caricaViaggiIniziali();
+    });
   }
 
   Future<void> _caricaViaggiIniziali() async {
     try {
-      // Ritarda l'esecuzione subito dopo la build
-      await Future.microtask(() async {
-        await ref.read(travelProvider.notifier).caricaViaggi();
-        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
-      });
+      // 1️⃣ Prima carica i viaggi da Firestore
+      await ref.read(travelProvider.notifier).caricaViaggi();
+
+      // 2️⃣ Poi archivia quelli scaduti basandosi sullo stato aggiornato
+      await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+
+      // 3️⃣ Infine ricarica la lista aggiornata
+      await ref.read(travelProvider.notifier).caricaViaggi();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -763,12 +766,20 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
     }
   }
 
+  bool _caricato = false;
+
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      // Posticipa la chiamata
-      Future.microtask(() {
-        ref.read(travelProvider.notifier).caricaViaggi();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_caricato) {
+      _caricato = true;
+      Future.microtask(() async {
+        // 1. Carica da Firestore
+        await ref.read(travelProvider.notifier).caricaViaggi();
+        // 2. Archivia i viaggi scaduti (in base a quelli aggiornati)
+        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+        // 3. Ricarica
+        await ref.read(travelProvider.notifier).caricaViaggi();
       });
     }
   }

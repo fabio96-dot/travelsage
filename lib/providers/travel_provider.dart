@@ -114,22 +114,35 @@ class TravelNotifier extends StateNotifier<TravelState> {
 
   Future<void> archiviaViaggiScaduti() async {
     try {
-      state = state.copyWith(isLoading: true);
       final oggi = DateTime.now();
-      
+      final oggiSoloData = DateTime(oggi.year, oggi.month, oggi.day);
+
+      bool modificato = false;
+
       for (final v in state.viaggi) {
-        if (v.confermato && !v.archiviato && v.dataFine.isBefore(oggi)) {
-          await _firestoreService.saveViaggio(v.copyWith(archiviato: true));
+          
+          print('🕓 Controllo viaggio: ${v.titolo}');
+          print('• dataFine: ${v.dataFine}');
+          print('• confermato: ${v.confermato}');
+          print('• archiviato: ${v.archiviato}');
+
+        final DaArchiviare = v.confermato && !v.archiviato && v.dataFine.isBefore(oggiSoloData);
+        if (DaArchiviare) {
+          final aggiornato = v.copyWith(archiviato: true);
+          await _firestoreService.saveViaggio(aggiornato);
+          modificato = true;
         }
       }
-      
-      if (!_disposed) {
-        state = state.copyWith(isLoading: false);
+
+      if (modificato) {
+        print('🔄 Viaggi archiviati. Ricarico da Firestore...');
+        await caricaViaggi();
+      } else {
+        print('ℹ️ Nessun viaggio da archiviare.');
       }
+
     } catch (e) {
-      if (!_disposed) {
-        state = state.copyWith(isLoading: false);
-      }
+      print('❌ Errore archiviazione: $e');
       rethrow;
     }
   }
