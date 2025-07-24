@@ -737,52 +737,24 @@ class TripsPage extends ConsumerStatefulWidget {
   ConsumerState<TripsPage> createState() => _TripsPageState();
 }
 
-class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _caricaViaggiIniziali();
-    });
-  }
+  class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserver {
+    @override
+    void initState() {
+      super.initState();
+      WidgetsBinding.instance.addObserver(this);
 
-  Future<void> _caricaViaggiIniziali() async {
-    try {
-      // 1️⃣ Prima carica i viaggi da Firestore
-      await ref.read(travelProvider.notifier).caricaViaggi();
-
-      // 2️⃣ Poi archivia quelli scaduti basandosi sullo stato aggiornato
-      await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
-
-      // 3️⃣ Infine ricarica la lista aggiornata
-      await ref.read(travelProvider.notifier).caricaViaggi();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore caricamento viaggi: $e')),
-        );
-      }
-    }
-  }
-
-  bool _caricato = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_caricato) {
-      _caricato = true;
-      Future.microtask(() async {
-        // 1. Carica da Firestore
-        await ref.read(travelProvider.notifier).caricaViaggi();
-        // 2. Archivia i viaggi scaduti (in base a quelli aggiornati)
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
-        // 3. Ricarica
-        await ref.read(travelProvider.notifier).caricaViaggi();
       });
     }
-  }
+
+    @override
+    void didChangeAppLifecycleState(AppLifecycleState state) {
+      if (state == AppLifecycleState.resumed) {
+        // Quando l’app torna in primo piano, ricontrolla gli archivi
+        ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+      }
+    }
 
   @override
   void dispose() {
@@ -803,7 +775,7 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);  // Chiudi subito il dialog
+              Navigator.pop(context);
               try {
                 await Future.microtask(() => ref.read(travelProvider.notifier).rimuoviViaggio(viaggio.id));
               } catch (e) {
@@ -857,170 +829,170 @@ class _TripsPageState extends ConsumerState<TripsPage> with WidgetsBindingObserv
     );
   }
 
-Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
-  final screenWidth = MediaQuery.of(context).size.width;
-  final theme = Theme.of(context);
+  Widget _buildViaggiGrid(BuildContext context, List<Viaggio> viaggiNonArchiviati) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final theme = Theme.of(context);
 
-  int cardsPerRow;
-  double cardHeight;
+    int cardsPerRow;
+    double cardHeight;
 
-  if (screenWidth >= 1200) {
-    cardsPerRow = 4;
-    cardHeight = 280;
-  } else if (screenWidth >= 800) {
-    cardsPerRow = 3;
-    cardHeight = 260;
-  } else if (screenWidth >= 600) {
-    cardsPerRow = 2;
-    cardHeight = 250;
-  } else {
-    cardsPerRow = 1;
-    cardHeight = 240;
-  }
+    if (screenWidth >= 1200) {
+      cardsPerRow = 4;
+      cardHeight = 280;
+    } else if (screenWidth >= 800) {
+      cardsPerRow = 3;
+      cardHeight = 260;
+    } else if (screenWidth >= 600) {
+      cardsPerRow = 2;
+      cardHeight = 250;
+    } else {
+      cardsPerRow = 1;
+      cardHeight = 240;
+    }
 
-  return RefreshIndicator(
-    onRefresh: () => ref.read(travelProvider.notifier).caricaViaggi(),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: GridView.builder(
-        itemCount: viaggiNonArchiviati.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cardsPerRow,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
-        ),
-        itemBuilder: (context, index) {
-          final viaggio = viaggiNonArchiviati[index];
-          final titolo = viaggio.titolo.trim().isNotEmpty
-              ? viaggio.titolo.trim()
-              : viaggio.destinazione.trim().isNotEmpty
-                  ? viaggio.destinazione.trim()
-                  : 'Senza Titolo';
-          final totale = calcolaTotaleStimato(viaggio.itinerario);
-          final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
-          final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
+    return RefreshIndicator(
+      onRefresh: () async {
+        await ref.read(travelProvider.notifier).archiviaViaggiScaduti();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: GridView.builder(
+          itemCount: viaggiNonArchiviati.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cardsPerRow,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: (screenWidth / cardsPerRow) / cardHeight,
+          ),
+          itemBuilder: (context, index) {
+            final viaggio = viaggiNonArchiviati[index];
+            final titolo = viaggio.titolo.trim().isNotEmpty
+                ? viaggio.titolo.trim()
+                : viaggio.destinazione.trim().isNotEmpty
+                    ? viaggio.destinazione.trim()
+                    : 'Senza Titolo';
+            final totale = calcolaTotaleStimato(viaggio.itinerario);
+            final haSuperatoBudget = totale > (double.tryParse(viaggio.budget) ?? double.infinity);
+            final colorePreventivo = haSuperatoBudget ? Colors.redAccent : theme.colorScheme.secondary;
 
-          return FutureBuilder<String?>(
-            future: ref.read(unsplashApiProvider).getImageForViaggio(viaggio),
-            builder: (context, snapshot) {
-              final imageUrl = snapshot.data;
+            return FutureBuilder<String?>(
+              future: ref.read(unsplashApiProvider).getImageForViaggio(viaggio),
+              builder: (context, snapshot) {
+                final imageUrl = snapshot.data;
 
-              return InkWell(
-                key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
+                return InkWell(
+                  key: Key('${viaggio.destinazione}_${viaggio.dataInizio.millisecondsSinceEpoch}'),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.grey.shade300),
                     ),
-                  );
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Hero image in alto
-                      if (imageUrl != null)
-                        ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(24), topRight: Radius.circular(24)),
-                          child: Image.network(
-                            imageUrl,
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (imageUrl != null)
+                          ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                            child: Image.network(
+                              imageUrl,
+                              height: 100,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        else
+                          Container(
                             height: 100,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            decoration: const BoxDecoration(
+                              color: Colors.grey,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(24),
+                                topRight: Radius.circular(24),
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.photo_outlined, color: Colors.white70, size: 40),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.location_on_rounded, color: Colors.indigo, size: 22),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      titolo,
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    onPressed: () => _showDeleteDialog(viaggio),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.euro, size: 16, color: Colors.grey),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Preventivo: €${totale.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: colorePreventivo,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                            ],
                           ),
                         )
-                      else
-                        Container(
-                          height: 100,
-                          width: double.infinity,
-                          decoration: const BoxDecoration(
-                            color: Colors.grey,
-                            borderRadius: BorderRadius.only(
-                              topLeft: Radius.circular(24),
-                              topRight: Radius.circular(24),
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.photo_outlined, color: Colors.white70, size: 40),
-                        ),
-
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.location_on_rounded, color: Colors.indigo, size: 22),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    titolo,
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                  onPressed: () => _showDeleteDialog(viaggio),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '${DateFormat('dd/MM/yyyy').format(viaggio.dataInizio)} → ${DateFormat('dd/MM/yyyy').format(viaggio.dataFine)}',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Icon(Icons.euro, size: 16, color: Colors.grey),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    'Preventivo: €${totale.toStringAsFixed(2)}',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: colorePreventivo,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16), // 👉 padding extra in basso
-                          ],
-                        ),
-                      )
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            );
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

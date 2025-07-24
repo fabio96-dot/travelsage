@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'spesa.dart';
+import 'package:latlong2/latlong.dart';
 
 class Viaggio {
   final String userId;
@@ -24,6 +25,7 @@ class Viaggio {
   final double etaMedia; // Età media dei partecipanti
   final String tipologiaViaggiatore; // Tipologia del viaggiatore
   final String? immagineUrl;
+  final LatLng? coordinate;
 
   Viaggio({
     required this.userId,
@@ -46,6 +48,7 @@ class Viaggio {
     this.etaMedia = 30.0, // 👈 nuovo campo con valore di default
     this.tipologiaViaggiatore = 'Backpacker', // 👈 nuovo campo con valore di default
     this.immagineUrl,
+    this.coordinate,
     Map<String, List<Attivita>>? itinerario,
   }) : itinerario = itinerario ?? {};
 
@@ -73,6 +76,7 @@ class Viaggio {
       etaMedia: etaMedia, // 👈 copia dell'età media
       tipologiaViaggiatore: tipologiaViaggiatore, // 👈 copia della tipologia del viaggiatore
       immagineUrl: immagineUrl, // 👈 copia dell'URL dell'immagine
+      coordinate: coordinate,
     );
   }
 
@@ -99,6 +103,7 @@ class Viaggio {
     String? tipologiaViaggiatore, // 👈 nuovo parametro
     Map<String, List<Attivita>>? itinerario,
     String? immagineUrl, // 👈 nuovo parametro per l'immagine
+    LatLng? coordinate,
   }) {
     return Viaggio(
       userId: userId ?? this.userId,  
@@ -122,6 +127,7 @@ class Viaggio {
       etaMedia: etaMedia ?? this.etaMedia, // 👈
       tipologiaViaggiatore: tipologiaViaggiatore ?? this.tipologiaViaggiatore, // 👈
       immagineUrl: immagineUrl ?? this.immagineUrl, // 👈
+      coordinate: coordinate ?? this.coordinate,
     );
   }
 
@@ -224,6 +230,12 @@ class Viaggio {
     raggioKm: _parseDouble(json['raggioKm'], 100.0),
     etaMedia: _parseDouble(json['etaMedia'], 30.0),
     tipologiaViaggiatore: json['tipologiaViaggiatore']?.toString() ?? 'Backpacker',
+    coordinate: json['coordinate'] != null
+    ? LatLng(
+        double.tryParse(json['coordinate']['lat'].toString()) ?? 0.0,
+        double.tryParse(json['coordinate']['lng'].toString()) ?? 0.0,
+      )
+    : null,
     immagineUrl: json['immagineUrl']?.toString(),    itinerario: json['itinerario'] != null
         ? (json['itinerario'] as Map<String, dynamic>).map(
             (key, value) => MapEntry(
@@ -259,6 +271,12 @@ class Viaggio {
       'etaMedia': etaMedia, // 👈 nuovo campo
       'tipologiaViaggiatore': tipologiaViaggiatore, // 👈 nuovo campo
       'immagineUrl': immagineUrl, // 👈 nuovo campo per l'immagine
+      'coordinate': coordinate != null
+      ? {
+          'lat': coordinate!.latitude,
+          'lng': coordinate!.longitude,
+       }
+        : null,
       'itinerario': itinerario.map(
         (key, value) => MapEntry(
           key,

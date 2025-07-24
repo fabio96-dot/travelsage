@@ -50,6 +50,12 @@ dependencies:
   lottie: ^3.1.0
   cached_network_image: ^3.3.1
   url_launcher: ^6.2.5  # Per aprire link esterni
+  geocoding: ^4.0.0
+  geocoding_android: ^4.0.1
+  geocoding_ios: ^3.1.0
+  geocoding_platform_interface: ^3.2.0
+  flutter_map_marker_popup: ^8.0.1  
+
 
 
 dev_dependencies:

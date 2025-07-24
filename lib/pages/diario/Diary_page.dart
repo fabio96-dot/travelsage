@@ -6,6 +6,7 @@ import 'world_map_visited.dart';
 import '../viaggio_dettaglio_page.dart';
 import 'travel_level_badge.dart';
 import '../../providers/travel_provider.dart';
+import '../setting_page.dart';
 
 final viaggiArchiviatiProvider = Provider<List<Viaggio>>((ref) {
   final statoViaggi = ref.watch(travelProvider);
@@ -74,6 +75,36 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
     );
   }
 
+  Widget _buildStatBox(ThemeData theme, int giorni, int km, int paesi) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Expanded(child: _buildStat(theme, 'Giorni', giorni.toString())),
+            _verticalDivider(theme),
+            Expanded(child: _buildStat(theme, 'Km Stimati', km.toString())),
+            _verticalDivider(theme),
+            Expanded(child: _buildStat(theme, 'Paesi', paesi.toString())),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _verticalDivider(ThemeData theme) {
     return Container(
       height: 32,
@@ -82,82 +113,125 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
     );
   }
 
-@override
-Widget build(BuildContext context) {
-  final theme = Theme.of(context);
-  final screenWidth = MediaQuery.of(context).size.width;
-  final isWideScreen = screenWidth > 800;
-
-  final sortedViaggi = [...ref.watch(viaggiArchiviatiProvider)]
-    ..sort((a, b) => b.dataInizio.compareTo(a.dataInizio));
-
-  // 🔍 Filtro viaggi
-  final viaggiFiltrati = _filtroAnno == null
-      ? sortedViaggi
-      : sortedViaggi.where((v) => v.dataInizio.year == _filtroAnno).toList();
-
-  final giorniTotali = viaggiFiltrati.fold<int>(
-    0,
-    (totale, viaggio) =>
-        totale + viaggio.dataFine.difference(viaggio.dataInizio).inDays,
-  );
-  final kmStimati = viaggiFiltrati.length * 1000;
-  final paesiVisitati =
-      viaggiFiltrati.map((v) => v.destinazione.toLowerCase()).toSet().length;
-
-  return Scaffold(
-    backgroundColor: theme.scaffoldBackgroundColor,
-    appBar: AppBar(
-      title: const Text('Diario di Viaggio'),
-      backgroundColor: theme.colorScheme.primary,
-      foregroundColor: theme.colorScheme.onPrimary,
-      elevation: 0,
-    ),
-    body: sortedViaggi.isEmpty
-        ? Center(
-            child: Text(
-              'Nessun viaggio archiviato ancora!',
-              style: theme.textTheme.titleMedium,
+  Widget _buildUserProfileBox(ThemeData theme, UserProfileState userProfile) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-          )
-        : SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 12),
-                TravelLevelBadge(paesiVisitati: paesiVisitati),
-                const SizedBox(height: 24),
-
-                // Box statistiche
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.shadowColor.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Expanded(child: _buildStat(theme, 'Giorni', giorniTotali.toString())),
-                        _verticalDivider(theme),
-                        Expanded(child: _buildStat(theme, 'Km Stimati', kmStimati.toString())),
-                        _verticalDivider(theme),
-                        Expanded(child: _buildStat(theme, 'Paesi', paesiVisitati.toString())),
-                      ],
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 36,
+              backgroundImage: userProfile.profileImage != null
+                  ? FileImage(userProfile.profileImage!)
+                  : null,
+              backgroundColor: Colors.grey.shade300,
+              child: userProfile.profileImage == null
+                  ? const Icon(Icons.person, size: 36)
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    userProfile.username,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 4),
+                  Text(
+                    '“Appassionato di viaggi e culture 🌍”', // placeholder bio
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.group_outlined, size: 16, color: theme.colorScheme.primary),
+                      const SizedBox(width: 4),
+                      Text('12 buddies', style: theme.textTheme.bodySmall),
+                      const SizedBox(width: 16),
+                      Icon(Icons.favorite_border, size: 16, color: theme.colorScheme.primary),
+                      const SizedBox(width: 4),
+                      Text('21 seguiti', style: theme.textTheme.bodySmall),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideScreen = screenWidth > 800;
+
+    final userProfile = ref.watch(userProfileProvider); // 👈 importa il nome e l'immagine utente
+    final sortedViaggi = [...ref.watch(viaggiArchiviatiProvider)]
+      ..sort((a, b) => b.dataInizio.compareTo(a.dataInizio));
+
+    final viaggiFiltrati = _filtroAnno == null
+        ? sortedViaggi
+        : sortedViaggi.where((v) => v.dataInizio.year == _filtroAnno).toList();
+
+    final giorniTotali = viaggiFiltrati.fold<int>(
+      0,
+      (totale, viaggio) =>
+          totale + viaggio.dataFine.difference(viaggio.dataInizio).inDays,
+    );
+    final kmStimati = viaggiFiltrati.length * 1000;
+    final paesiVisitati =
+        viaggiFiltrati.map((v) => v.destinazione.toLowerCase()).toSet().length;
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Journal'),
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
+        elevation: 0,
+      ),
+      body: sortedViaggi.isEmpty
+          ? Center(
+              child: Text(
+                'Nessun viaggio archiviato ancora!',
+                style: theme.textTheme.titleMedium,
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: [
+                  // 👤 SEZIONE PROFILO UTENTE
+                  _buildUserProfileBox(theme, userProfile),
+                  const SizedBox(height: 24),
+
+                  // 🏅 BADGE + STATISTICHE
+                  TravelLevelBadge(paesiVisitati: paesiVisitati),
+                  const SizedBox(height: 24),
+                  _buildStatBox(theme, giorniTotali, kmStimati, paesiVisitati),
+                  const SizedBox(height: 24),
 
                 // Mappa
                 Padding(
