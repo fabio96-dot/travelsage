@@ -9,12 +9,14 @@ class DiaryCard extends ConsumerWidget {
   final Viaggio viaggio;
   final VoidCallback? onDelete;
   final VoidCallback? onTap;
+  final VoidCallback? onShare; // 👈 aggiunto
 
   const DiaryCard({
     super.key,
     required this.viaggio,
     required this.onDelete,
     required this.onTap,
+    this.onShare, // 👈 aggiunto
   });
 
   @override
@@ -107,6 +109,11 @@ class DiaryCard extends ConsumerWidget {
                             ),
                           ),
                           IconButton(
+                            icon: const Icon(Icons.share_outlined, color: Colors.indigo),
+                            onPressed: onShare,
+                            tooltip: 'Condividi su Travelboard',
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                             onPressed: onDelete,
                             tooltip: 'Elimina viaggio',
@@ -152,5 +159,6 @@ class DiaryCard extends ConsumerWidget {
     );
   }
 }
+
 
 

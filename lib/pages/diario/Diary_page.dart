@@ -7,6 +7,10 @@ import '../viaggio_dettaglio_page.dart';
 import 'travel_level_badge.dart';
 import '../../providers/travel_provider.dart';
 import '../setting_page.dart';
+import '../../models/post_viaggio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/unsplash_api.dart';
 
 final viaggiArchiviatiProvider = Provider<List<Viaggio>>((ref) {
   final statoViaggi = ref.watch(travelProvider);
@@ -180,6 +184,54 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
     );
   }
 
+  Future<void> shareToTravelBoard(Viaggio viaggio, String pensiero) async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final docRef = FirebaseFirestore.instance.collection('travel_board_posts').doc();
+
+    // 🔍 Prova a recuperare il profilo da Firestore
+    String nomeUtente = user.displayName ?? 'Viaggiatore';
+    String fotoProfiloUrl = user.photoURL ?? '';
+
+    try {
+      final profiloDoc = await FirebaseFirestore.instance.collection('utenti').doc(user.uid).get();
+      final data = profiloDoc.data();
+      if (data != null) {
+        if (data['username'] != null && (data['username'] as String).trim().isNotEmpty) {
+          nomeUtente = data['username'];
+        }
+        if (data['immagineUrl'] != null && (data['immagineUrl'] as String).trim().isNotEmpty) {
+          fotoProfiloUrl = data['immagineUrl'];
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Errore nel recupero del profilo utente: $e');
+      // Continua comunque con nomeUtente e fotoProfiloUrl da FirebaseAuth
+    }
+
+    // 🔥 Carica immagine da Unsplash (fallback già gestito internamente)
+    final imageUrl = await UnsplashApi().getImageForViaggio(viaggio);
+
+    // 📤 Crea il post
+    final post = PostViaggio(
+      id: docRef.id,
+      userId: user.uid,
+      nomeUtente: nomeUtente,
+      titolo: viaggio.titolo,
+      destinazione: viaggio.destinazione,
+      dataInizio: viaggio.dataInizio,
+      dataFine: viaggio.dataFine,
+      costoTotaleStimato: viaggio.spese.fold(0, (a, e) => a + e.importo),
+      pensiero: pensiero,
+      immagineUrl: imageUrl ?? '',
+      fotoProfiloUrl: fotoProfiloUrl,
+      valutazione: 0,
+      timestamp: DateTime.now(),
+    );
+
+    await docRef.set(post.toMap());
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -314,26 +366,61 @@ class _DiaryPageState extends ConsumerState<DiaryPage> {
                             endIndent: 16,
                             color: theme.dividerColor,
                           ),
-                          itemBuilder: (context, index) {
-                            final viaggio = viaggiFiltrati[index];
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                              child: DiaryCard(
-                                viaggio: viaggio,
-                                onDelete: () => _showDeleteDialog(viaggio),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          ViaggioDettaglioPage(viaggio: viaggio, index: index),
-                                    ),
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        ),
+                         itemBuilder: (context, index) {
+                          final viaggio = viaggiFiltrati[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            child: DiaryCard(
+                              viaggio: viaggio,
+                              onDelete: () => _showDeleteDialog(viaggio),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ViaggioDettaglioPage(viaggio: viaggio, index: index),
+                                  ),
+                                );
+                              },
+                              onShare: () async {
+                                final result = await showDialog<String>(
+                                  context: context,
+                                  builder: (ctx) {
+                                    String pensiero = '';
+                                    return AlertDialog(
+                                      title: const Text('Condividi questo viaggio'),
+                                      content: TextField(
+                                        maxLines: 3,
+                                        decoration: const InputDecoration(labelText: 'Che emozioni hai provato?'),
+                                        onChanged: (v) => pensiero = v,
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text('Annulla'),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(ctx, pensiero.trim()),
+                                          child: const Text('Condividi'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+
+                                if (result != null && result.isNotEmpty) {
+                                  await shareToTravelBoard(viaggio, result);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Viaggio condiviso sul Travel Board!')),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          );
+                        },
+
+                  )
                 ),
               ],
             ),

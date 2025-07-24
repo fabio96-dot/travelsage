@@ -285,6 +285,12 @@ class Viaggio {
       ),
     };
   }
+
+  factory Viaggio.fromFirestore(DocumentSnapshot doc) {
+  final data = doc.data() as Map<String, dynamic>;
+  return Viaggio.fromJson(data);
+}
+
 }
 
 

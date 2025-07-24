@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:travel_sage/providers/theme_provider.dart'; // contiene themeModeProvider
 
 // ------------------ MODELLO PROFILO ------------------
@@ -34,13 +36,29 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedUsername = prefs.getString('username') ?? 'Utente';
+    final savedUsername = prefs.getString('username');
     final imagePath = prefs.getString('profileImagePath');
     File? imageFile;
     if (imagePath != null && imagePath.isNotEmpty) {
       imageFile = File(imagePath);
     }
-    state = UserProfileState(username: savedUsername, profileImage: imageFile);
+
+    String username = savedUsername ?? 'Utente';
+
+    // 🔄 Se Firebase è loggato, prova a leggere anche da Firestore
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await FirebaseFirestore.instance.collection('utenti').doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        if (data['username'] != null) {
+          username = data['username'];
+        }
+        // 👉 Se vuoi, potresti anche scaricare l’immagine da FirebaseStorage e salvarla localmente
+      }
+    }
+
+    state = UserProfileState(username: username, profileImage: imageFile);
   }
 
   Future<void> setUsername(String newUsername) async {
@@ -58,12 +76,41 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
       await prefs.remove('profileImagePath');
     }
   }
-}
 
-final userProfileProvider =
+  /// 🔁 SINCRONIZZA SU FIREBASE
+  Future<void> syncProfileWithFirebase() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final uid = user.uid;
+    final firestore = FirebaseFirestore.instance;
+    final storage = FirebaseStorage.instance;
+
+    String? imageUrl;
+
+    if (state.profileImage != null) {
+      final ref = storage.ref().child('profile_images/$uid.jpg');
+      await ref.putFile(state.profileImage!);
+      imageUrl = await ref.getDownloadURL();
+    }
+
+    // ✅ Salva su Firestore
+    await firestore.collection('utenti').doc(uid).set({
+      'username': state.username,
+      'immagineUrl': imageUrl,
+    }, SetOptions(merge: true));
+
+    // ✅ Aggiorna anche FirebaseAuth
+    await user.updateDisplayName(state.username);
+    if (imageUrl != null) {
+      await user.updatePhotoURL(imageUrl);
+    }
+  }
+}
+  final userProfileProvider =
     StateNotifierProvider<UserProfileNotifier, UserProfileState>(
   (ref) => UserProfileNotifier(),
-);
+  );
 
 // ------------------ PAGINA IMPOSTAZIONI ------------------
 
@@ -93,7 +140,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _saveProfile() async {
     final newUsername = _usernameController.text.trim();
-    await ref.read(userProfileProvider.notifier).setUsername(newUsername);
+    final notifier = ref.read(userProfileProvider.notifier);
+    await notifier.setUsername(newUsername);
+    await notifier.syncProfileWithFirebase();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Profilo salvato')),
     );

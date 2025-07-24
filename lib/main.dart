@@ -25,6 +25,7 @@ import 'dart:async';
 import 'package:travel_sage/services/gemini_api.dart';
 import 'dart:convert';
 import 'pages/viaggiocreatoAI.dart';
+import 'pages/travelboard/travel_board_page.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +36,7 @@ import 'providers/theme_provider.dart';
 import 'providers/travel_provider.dart';
 import 'providers/splash_screen_provider.dart';
 import 'services/unsplash_api.dart';
+import 'pages/travelboard/user_journal_page.dart';
 
 
 
@@ -71,6 +73,31 @@ class AppEntryPoint extends ConsumerWidget {
       darkTheme: AppThemes.darkTheme,
       themeMode: themeMode,
       home: const SplashScreen(), // Mostra splash screen all'avvio
+
+      // ✅ Aggiungiamo le rotte dinamiche
+      onGenerateRoute: (settings) {
+        if (settings.name == '/user-journal') {
+          final args = settings.arguments as Map<String, dynamic>;
+          final userId = args['userId'] as String?;
+          final username = args['username'] as String?;
+
+          if (userId == null || username == null) {
+            return MaterialPageRoute(
+              builder: (_) => const Scaffold(
+                body: Center(child: Text("Errore: dati utente mancanti")),
+              ),
+            );
+          }
+
+          return MaterialPageRoute(
+            builder: (_) => UserJournalPage(
+              userId: userId,
+              username: username,
+            ),
+          );
+        }
+        return null;
+      },
     );
   }
 }
@@ -305,7 +332,8 @@ class MainNavigation extends ConsumerWidget {
           );
         },
       ),
-      DiaryPage(),
+      const DiaryPage(),
+      const TravelBoardPage(), // 👉 aggiorneremo con fetch da Firestore
       const SettingsPage(),
     ];
 
@@ -314,7 +342,6 @@ class MainNavigation extends ConsumerWidget {
     }
 
     return Scaffold(
-      // Usa IndexedStack per mantenere le pagine montate
       body: IndexedStack(
         index: selectedIndex,
         children: pages,
@@ -327,6 +354,7 @@ class MainNavigation extends ConsumerWidget {
           BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high), label: 'Travelbuilder'),
           BottomNavigationBarItem(icon: Icon(Icons.card_travel), label: 'Mytravels'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Journal'),
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Travel Board'), // 👈 nuova voce
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
         type: BottomNavigationBarType.fixed,
