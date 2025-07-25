@@ -2,9 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:travel_sage/providers/theme_provider.dart'; // contiene themeModeProvider
 
@@ -35,9 +34,10 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   }
 
   Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUsername = prefs.getString('username');
-    final imagePath = prefs.getString('profileImagePath');
+    final box = Hive.box('user_profile');
+    final savedUsername = box.get('username') as String?;
+    final imagePath = box.get('profileImagePath') as String?;
+
     File? imageFile;
     if (imagePath != null && imagePath.isNotEmpty) {
       imageFile = File(imagePath);
@@ -45,16 +45,13 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 
     String username = savedUsername ?? 'Utente';
 
-    // 🔄 Se Firebase è loggato, prova a leggere anche da Firestore
+    // 🔄 Se Firebase è loggato, prova a leggere da Firestore
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final doc = await FirebaseFirestore.instance.collection('utenti').doc(user.uid).get();
       if (doc.exists) {
         final data = doc.data()!;
-        if (data['username'] != null) {
-          username = data['username'];
-        }
-        // 👉 Se vuoi, potresti anche scaricare l’immagine da FirebaseStorage e salvarla localmente
+        if (data['username'] != null) username = data['username'];
       }
     }
 
@@ -63,17 +60,17 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 
   Future<void> setUsername(String newUsername) async {
     state = state.copyWith(username: newUsername);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('username', newUsername.trim());
+    final box = Hive.box('user_profile');
+    await box.put('username', newUsername.trim());
   }
 
   Future<void> setProfileImage(File? newImage) async {
     state = state.copyWith(profileImage: newImage);
-    final prefs = await SharedPreferences.getInstance();
+    final box = Hive.box('user_profile');
     if (newImage != null) {
-      await prefs.setString('profileImagePath', newImage.path);
+      await box.put('profileImagePath', newImage.path);
     } else {
-      await prefs.remove('profileImagePath');
+      await box.delete('profileImagePath');
     }
   }
 
@@ -82,29 +79,12 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final uid = user.uid;
     final firestore = FirebaseFirestore.instance;
-    final storage = FirebaseStorage.instance;
-
-    String? imageUrl;
-
-    if (state.profileImage != null) {
-      final ref = storage.ref().child('profile_images/$uid.jpg');
-      await ref.putFile(state.profileImage!);
-      imageUrl = await ref.getDownloadURL();
-    }
-
-    // ✅ Salva su Firestore
-    await firestore.collection('utenti').doc(uid).set({
+    await firestore.collection('utenti').doc(user.uid).set({
       'username': state.username,
-      'immagineUrl': imageUrl,
     }, SetOptions(merge: true));
 
-    // ✅ Aggiorna anche FirebaseAuth
     await user.updateDisplayName(state.username);
-    if (imageUrl != null) {
-      await user.updatePhotoURL(imageUrl);
-    }
   }
 }
   final userProfileProvider =
@@ -387,7 +367,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Esci'),
-            onTap: () => FirebaseAuth.instance.signOut(),
+           onTap: () async {
+              await Hive.box('user_profile').clear();
+              await FirebaseAuth.instance.signOut();
+            },
           ),
         ],
       ),

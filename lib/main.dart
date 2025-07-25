@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -47,9 +48,11 @@ Future<void> main() async {
   await runZonedGuarded(() async {
     // Inizializzazione dentro la stessa zona
     WidgetsFlutterBinding.ensureInitialized();
-
     await _setupEnvironment();
     await _initializeAppServices();
+
+    await Hive.initFlutter();
+    await Hive.openBox('user_profile');
 
     runApp(
       const ProviderScope(
@@ -77,27 +80,35 @@ class AppEntryPoint extends ConsumerWidget {
       // ✅ Aggiungiamo le rotte dinamiche
       onGenerateRoute: (settings) {
         if (settings.name == '/user-journal') {
-          final args = settings.arguments as Map<String, dynamic>;
-          final userId = args['userId'] as String?;
-          final username = args['username'] as String?;
+          final args = settings.arguments;
 
-          if (userId == null || username == null) {
+          if (args is Map<String, dynamic> &&
+              args['userId'] != null &&
+              args['username'] != null) {
+            final userId = args['userId'] as String;
+            final username = args['username'] as String;
+
+            return MaterialPageRoute(
+              builder: (_) => UserJournalPage(
+                userId: userId,
+                username: username,
+              ),
+            );
+          } else {
+            // 🔴 LOGGA l'errore su Crashlytics per futura analisi
+            FirebaseCrashlytics.instance
+                .log('Argomenti mancanti per /user-journal: $args');
+
             return MaterialPageRoute(
               builder: (_) => const Scaffold(
-                body: Center(child: Text("Errore: dati utente mancanti")),
+                body: Center(child: Text("❌ Errore: dati utente mancanti")),
               ),
             );
           }
-
-          return MaterialPageRoute(
-            builder: (_) => UserJournalPage(
-              userId: userId,
-              username: username,
-            ),
-          );
         }
+
         return null;
-      },
+      }
     );
   }
 }
@@ -105,7 +116,7 @@ class AppEntryPoint extends ConsumerWidget {
 Future<void> _setupEnvironment() async {
   debugPrintRebuildDirtyWidgets = false;
   debugProfileBuildsEnabled = false;
-
+  await Hive.initFlutter(); // <--- aggiunto
   await dotenv.load(fileName: ".env");
 
   await initializeDateFormatting('it_IT', null);

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_map_marker_popup/flutter_map_marker_popup.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../models/viaggio.dart';
 import '../viaggio_dettaglio_page.dart';
+import '../../services/geocoding_cache_data.dart';
 
 class WorldMapVisited extends StatefulWidget {
   final List<Viaggio> viaggi;
@@ -23,6 +25,17 @@ class _WorldMapVisitedState extends State<WorldMapVisited> {
   @override
   void initState() {
     super.initState();
+    _initHiveAndLoadCoords();
+  }
+
+  Future<void> _initHiveAndLoadCoords() async {
+    final box = await Hive.openBox('geocoding_cache');
+
+    if (box.isEmpty) {
+      await box.putAll(geocodingCachePreload);
+      debugPrint("📍 Precaricata cache con ${geocodingCachePreload.length} città");
+    }
+
     _loadCoords();
   }
 
@@ -37,10 +50,22 @@ class _WorldMapVisitedState extends State<WorldMapVisited> {
       }
       if (coord != null) list.add(v.copyWith(coordinate: coord));
     }
-    setState(() => _withCoord = list);
+
+    // ✅ Solo se il widget è ancora attivo
+    if (mounted) {
+      setState(() => _withCoord = list);
+    }
   }
 
   Future<LatLng?> _geocode(String q) async {
+    final box = Hive.box('geocoding_cache');
+    final cached = box.get(q);
+    if (cached != null && cached is Map) {
+      final lat = cached['lat'] as double?;
+      final lon = cached['lon'] as double?;
+      if (lat != null && lon != null) return LatLng(lat, lon);
+    }
+
     try {
       final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
         'q': q,
@@ -50,12 +75,17 @@ class _WorldMapVisitedState extends State<WorldMapVisited> {
       final res = await http.get(uri, headers: {
         'User-Agent': 'TravelSageApp/1.0 (your@email)'
       });
+
       if (res.statusCode == 200) {
         final data = json.decode(res.body) as List;
         if (data.isNotEmpty) {
           final lat = double.tryParse(data[0]['lat']);
           final lon = double.tryParse(data[0]['lon']);
-          if (lat != null && lon != null) return LatLng(lat, lon);
+          if (lat != null && lon != null) {
+            // Salva in cache!
+            box.put(q, {'lat': lat, 'lon': lon});
+            return LatLng(lat, lon);
+          }
         }
       }
     } catch (_) {}
@@ -171,7 +201,7 @@ Widget build(BuildContext context) {
                               MaterialPageRoute(
                                 builder: (_) => ViaggioDettaglioPage(
                                   viaggio: v,
-                                  index: widget.viaggi.indexOf(v),
+                                  index: widget.viaggi.contains(v) ? widget.viaggi.indexOf(v) : 0,
                                 ),
                               ),
                             );
