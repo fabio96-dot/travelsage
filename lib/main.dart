@@ -38,7 +38,8 @@ import 'providers/travel_provider.dart';
 import 'providers/splash_screen_provider.dart';
 import 'services/unsplash_api.dart';
 import 'pages/travelboard/user_journal_page.dart';
-
+import 'utils/helpers/hive_istances.dart';
+import 'widgets/offline_banner.dart';
 
 
 final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
@@ -51,8 +52,8 @@ Future<void> main() async {
     await _setupEnvironment();
     await _initializeAppServices();
 
-    await Hive.initFlutter();
-    await Hive.openBox('user_profile');
+    // ✅ Inizializza Hive tramite helper centralizzato
+    await setupHive();
 
     runApp(
       const ProviderScope(
@@ -294,6 +295,7 @@ String _simplifyErrorMessage(String error) {
 
 List<Viaggio> viaggiBozza = [];
 
+
 class TravelSageApp extends StatelessWidget {
   const TravelSageApp({super.key});
 
@@ -324,27 +326,17 @@ class MainNavigation extends ConsumerWidget {
     final selectedIndex = ref.watch(selectedIndexProvider);
 
     final pages = [
-      OrganizeTripPage(
-        onViaggioCreato: (nuovoViaggio) {
-          // Aggiorna lo stato se serve
-        },
-      ),
-      TripsPage(
-        onAddNewTrip: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OrganizeTripPage(
-                onViaggioCreato: (viaggio) {
-                  Navigator.pop(context);
-                },
-              ),
-            ),
-          );
-        },
-      ),
+      OrganizeTripPage(onViaggioCreato: (nuovoViaggio) {}),
+      TripsPage(onAddNewTrip: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OrganizeTripPage(onViaggioCreato: (_) => Navigator.pop(context)),
+          ),
+        );
+      }),
       const DiaryPage(),
-      const TravelBoardPage(), // 👉 aggiorneremo con fetch da Firestore
+      const TravelBoardPage(),
       const SettingsPage(),
     ];
 
@@ -353,9 +345,17 @@ class MainNavigation extends ConsumerWidget {
     }
 
     return Scaffold(
-      body: IndexedStack(
-        index: selectedIndex,
-        children: pages,
+      body: Stack(
+        children: [
+          // 👇 Le pagine principali
+          IndexedStack(
+            index: selectedIndex,
+            children: pages,
+          ),
+
+          // 👇 Overlay elegante in alto se offline
+          const OfflineIndicatorOverlay(),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: selectedIndex,
@@ -365,7 +365,7 @@ class MainNavigation extends ConsumerWidget {
           BottomNavigationBarItem(icon: Icon(Icons.auto_fix_high), label: 'Travelbuilder'),
           BottomNavigationBarItem(icon: Icon(Icons.card_travel), label: 'Mytravels'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Journal'),
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Travel Board'), // 👈 nuova voce
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Travel Board'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
         type: BottomNavigationBarType.fixed,
@@ -373,6 +373,7 @@ class MainNavigation extends ConsumerWidget {
     );
   }
 }
+
 
 
 

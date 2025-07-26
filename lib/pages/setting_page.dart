@@ -1,8 +1,9 @@
 import 'dart:io';
+import '../utils/helpers/hive_istances.dart';
+import 'package:travel_sage/models/user_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:travel_sage/providers/theme_provider.dart'; // contiene themeModeProvider
@@ -34,16 +35,20 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   }
 
   Future<void> _loadUserData() async {
-    final box = Hive.box('user_profile');
-    final savedUsername = box.get('username') as String?;
-    final imagePath = box.get('profileImagePath') as String?;
+    await utenteHelper.openBox(); // assicura che il box sia aperto
+    final profili = await utenteHelper.getAll();
 
+    String username = 'Utente';
     File? imageFile;
-    if (imagePath != null && imagePath.isNotEmpty) {
-      imageFile = File(imagePath);
-    }
 
-    String username = savedUsername ?? 'Utente';
+    if (profili.isNotEmpty) {
+      final profilo = profili.first;
+      username = profilo.username;
+      if (profilo.imagePath != null) {
+        final file = File(profilo.imagePath!);
+        if (file.existsSync()) imageFile = file;
+      }
+    }
 
     // 🔄 Se Firebase è loggato, prova a leggere da Firestore
     final user = FirebaseAuth.instance.currentUser;
@@ -60,19 +65,32 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 
   Future<void> setUsername(String newUsername) async {
     state = state.copyWith(username: newUsername);
-    final box = Hive.box('user_profile');
-    await box.put('username', newUsername.trim());
+
+    final imagePath = state.profileImage?.path;
+
+    final nuovoProfilo = UserProfile(
+      username: newUsername.trim(),
+      imagePath: imagePath,
+    );
+
+    await utenteHelper.save('local_user', nuovoProfilo);
   }
+
 
   Future<void> setProfileImage(File? newImage) async {
     state = state.copyWith(profileImage: newImage);
-    final box = Hive.box('user_profile');
-    if (newImage != null) {
-      await box.put('profileImagePath', newImage.path);
-    } else {
-      await box.delete('profileImagePath');
-    }
+
+    final existing = await utenteHelper.getAll();
+    final username = existing.isNotEmpty ? existing.first.username : state.username;
+
+    final nuovoProfilo = UserProfile(
+      username: username,
+      imagePath: newImage?.path,
+    );
+
+    await utenteHelper.save('local_user', nuovoProfilo);
   }
+
 
   /// 🔁 SINCRONIZZA SU FIREBASE
   Future<void> syncProfileWithFirebase() async {
@@ -368,7 +386,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Esci'),
            onTap: () async {
-              await Hive.box('user_profile').clear();
+              await utenteHelper.clearAll();
               await FirebaseAuth.instance.signOut();
             },
           ),

@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:travel_sage/models/viaggio.dart';
 import '../../services/firestore_service.dart';
+import '../utils/helpers/hive_istances.dart';
+import '../utils/viaggio_type_adapter.dart'; // ✅ Per HiveViaggio
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 
 class TravelState {
@@ -38,18 +41,43 @@ class TravelNotifier extends StateNotifier<TravelState> {
   }
 
   Future<void> _init() async {
-    await caricaViaggi();
-    _setupFirestoreListener();
+    await _caricaDaHive(); // ✅ Carica subito da Hive
+    final connessione = await Connectivity().checkConnectivity();
+    if (connessione != ConnectivityResult.none) {
+      await caricaViaggi(); // ✅ Poi sincronizza se online
+      _setupFirestoreListener();
+    }
   }
+
+  Future<void> _caricaDaHive() async {
+    try {
+      final hiveItems = await viaggiHelper.getAll();
+      final viaggiConvertiti = hiveItems
+          .whereType<HiveViaggio>()
+          .map((h) => h.toModel("default")) // 🔁 userId temporaneo
+          .toList();
+      if (!_disposed) {
+        state = state.copyWith(viaggi: viaggiConvertiti, isLoading: false);
+      }
+    } catch (e) {
+      print('❌ Errore caricamento Hive: $e');
+    }
+  }
+
 
   void _setupFirestoreListener() {
     _viaggiSubscription?.cancel();
     
     try {
       _viaggiSubscription = _firestoreService.getViaggiStream().listen(
-        (viaggi) {
-          if (!_disposed) { // Usiamo il nostro flag invece di isClosed
+        (viaggi) async {
+          if (!_disposed) {
             state = state.copyWith(viaggi: viaggi, errorMessage: null);
+            // 🔁 Salva anche su Hive
+            await viaggiHelper.clearAll();
+            for (final v in viaggi) {
+              await viaggiHelper.save(v.id, HiveViaggio.fromModel(v));
+            }
           }
         },
         onError: (error) {
